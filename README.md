@@ -1,4 +1,4 @@
-# Pharmer — Local AI Pharmacology Workbench
+# Pharmer / Local AI Pharmacology Workbench
 
 Pharmer is an open-source, 100% local AI assistant built for medicinal chemists, pharmacology students, and researchers. It allows you to search chemical compounds using SMILES strings, common drug names, or PubChem CIDs, and get back structured pharmacological monographs grounded in verified medical literature.
 
