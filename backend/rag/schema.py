@@ -21,6 +21,8 @@ class Citation(BaseModel):
     source: str
     url: Optional[str] = None
     accessed_at: Optional[str] = None
+    text: Optional[str] = None
+
 
 
 class FieldValue(BaseModel):

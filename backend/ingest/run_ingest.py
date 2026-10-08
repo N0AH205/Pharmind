@@ -58,25 +58,16 @@ BENCHMARK_DRUGS: list[dict] = [
 ]
 
 
-# -- Embedding -----------------------------------------------------------------
+from rag.embeddings import embed_text_local
+
 
 def embed_text(text: str) -> list[float]:
     """
-    Embed text using Google text-embedding-004 (synchronous, httpx).
-    Uses the same GEMINI_API_KEY as the LLM provider.
+    Embed text locally using FastEmbed (BAAI/bge-small-en-v1.5).
+    100% offline.
     """
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{EMBED_MODEL}:embedContent?key={GEMINI_API_KEY}"
-    )
-    payload = {
-        "model": f"models/{EMBED_MODEL}",
-        "content": {"parts": [{"text": text[:8000]}]},
-        "taskType": "RETRIEVAL_DOCUMENT",
-    }
-    resp = httpx.post(url, json=payload, timeout=30.0)
-    resp.raise_for_status()
-    return resp.json()["embedding"]["values"]
+    return embed_text_local(text)
+
 
 
 # -- PubChem CID resolution ----------------------------------------------------
@@ -321,25 +312,26 @@ def print_db_summary(collection):
 
 async def main():
     print("=" * 60)
-    print("PharmaRAG — Knowledge Base Ingestion (Phase 4)")
-    print(f"Embedding model : {EMBED_MODEL} (Google Gemini API)")
+    print("PharmaRAG — Knowledge Base Ingestion (Local FastEmbed)")
+    print(f"Embedding model : BAAI/bge-small-en-v1.5 (Local FastEmbed ONNX)")
     print(f"ChromaDB path   : {CHROMA_PATH}")
     print("=" * 60)
 
-    # Verify Gemini API key
-    if not GEMINI_API_KEY:
-        print("\nERROR: GEMINI_API_KEY is not set in backend/.env")
-        return
-
-    # Quick connectivity check
+    # Quick connectivity/local test check
     try:
         test_vec = embed_text("test")
-        print(f"\nGemini embedding OK — vector dimension: {len(test_vec)}")
+        print(f"\nLocal embedding OK — vector dimension: {len(test_vec)}")
     except Exception as e:
-        print(f"\nERROR: Gemini embedding test failed: {e}")
+        print(f"\nERROR: Local embedding test failed: {e}")
         return
 
     db = chromadb.PersistentClient(path=CHROMA_PATH)
+    try:
+        db.delete_collection(name=COLLECTION_NAME)
+        print("Reset existing ChromaDB collection for local 384d FastEmbed embeddings...")
+    except Exception:
+        pass
+
     collection = db.get_or_create_collection(
         name=COLLECTION_NAME,
         metadata={"hnsw:space": "cosine"},

@@ -1,57 +1,109 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import type { ChatMessage } from "@/lib/types";
-import { queryDrug } from "@/lib/api";
+import type { ChatMessage, DrugInfo } from "@/lib/types";
+import { queryDrugStream } from "@/lib/api";
 import SMILESInput from "@/components/SMILESInput";
 import ChatInterface from "@/components/ChatInterface";
+import PDFDropzone from "@/components/PDFDropzone";
+import DrugComparisonModal from "@/components/DrugComparisonModal";
 import styles from "./page.module.css";
 
 
 export default function HomePage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
+  const [streamStatus, setStreamStatus] = useState<string>("");
+  const [compareModalOpen, setCompareModalOpen] = useState(false);
 
-  const handleQuery = useCallback(async (smiles: string) => {
+  const drugInfos = messages.filter((m) => m.drugInfo).map((m) => m.drugInfo as DrugInfo);
+
+  const handleQuery = useCallback(async (queryStr: string) => {
     if (loading) return;
 
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      smiles,
-      timestamp: new Date(),
-    };
+    // Check if query is a SMILES or common chemical query vs a conversational question
+    const isSmilesOrDrug = queryStr.length < 80 && !queryStr.includes("?") && !queryStr.toLowerCase().startsWith("what") && !queryStr.toLowerCase().startsWith("how") && !queryStr.toLowerCase().startsWith("why") && !queryStr.toLowerCase().startsWith("can") && !queryStr.toLowerCase().startsWith("is");
 
-    setMessages((prev) => [...prev, userMsg]);
-    setLoading(true);
-
-    try {
-      const res = await queryDrug(smiles);
-
-      const assistantMsg: ChatMessage = {
-        id: `assistant-${Date.now()}`,
-        role: "assistant",
-        drugInfo: res.success ? res.data : undefined,
-        error: res.success ? undefined : (res.error || "An unknown error occurred."),
+    if (isSmilesOrDrug) {
+      const userMsg: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: "user",
+        smiles: queryStr,
         timestamp: new Date(),
       };
 
-      setMessages((prev) => [...prev, assistantMsg]);
-    } catch {
-      const assistantMsg: ChatMessage = {
-        id: `assistant-${Date.now()}`,
-        role: "assistant",
-        error: "Network error — could not reach the server.",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-    } finally {
+      setMessages((prev) => [...prev, userMsg]);
+      setLoading(true);
+      setStreamStatus("Initializing local query...");
+
+      let finalData: any = null;
+      let errorMessage: string | null = null;
+
+      await queryDrugStream(queryStr, {
+        onStatus: (status) => {
+          setStreamStatus(status.message);
+        },
+        onToken: () => {
+          setStreamStatus("Streaming tokens from local LLM...");
+        },
+        onResult: (data) => {
+          finalData = data;
+        },
+        onError: (err) => {
+          errorMessage = err;
+        },
+      });
+
       setLoading(false);
+      setStreamStatus("");
+
+      const assistantMsg: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        drugInfo: finalData || undefined,
+        error: errorMessage || (finalData ? undefined : "Network error — could not connect to local backend."),
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, assistantMsg]);
+    } else {
+      // Conversational Q&A mode
+      const userMsg: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: "user",
+        text: queryStr,
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, userMsg]);
+      setLoading(true);
+      setStreamStatus("Searching knowledge base & generating answer...");
+
+      const history = messages
+        .filter((m) => m.text || m.smiles)
+        .map((m) => ({ role: m.role, content: m.text || `Drug query: ${m.smiles}` }));
+
+      const { sendChatMessage } = await import("@/lib/api");
+      const res = await sendChatMessage(queryStr, history);
+
+      setLoading(false);
+      setStreamStatus("");
+
+      const assistantMsg: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        text: res.success ? res.answer : undefined,
+        error: res.success ? undefined : res.error || "Could not generate answer.",
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, assistantMsg]);
     }
-  }, [loading]);
+  }, [loading, messages]);
 
   const handleNewChat = useCallback(() => {
     setMessages([]);
+    setStreamStatus("");
   }, []);
 
   return (
@@ -81,7 +133,7 @@ export default function HomePage() {
           </div>
           <div>
             <h1 className={styles.logoTitle}>Pharmer</h1>
-            <p className={styles.logoSub}>Drug information retrieval</p>
+            <p className={styles.logoSub}>Local AI Drug Workbench</p>
           </div>
         </div>
 
@@ -100,12 +152,12 @@ export default function HomePage() {
             </button>
           </div>
 
-
+          <PDFDropzone />
         </nav>
 
         <div className={styles.sidebarFooter}>
-          <p>Educational use only</p>
-          <p>Not clinical advice</p>
+          <p>100% Offline Local Engine</p>
+          <p>Educational use only — Not clinical advice</p>
         </div>
       </aside>
 
@@ -113,7 +165,25 @@ export default function HomePage() {
       <main className={styles.main} id="main-content">
         {/* Top bar */}
         <div className={styles.topbar}>
-          <h2 className={styles.topbarTitle}>Drug Query Assistant</h2>
+          <h2 className={styles.topbarTitle}>Pharmacology Intelligence Assistant</h2>
+          {drugInfos.length >= 2 && (
+            <button
+              type="button"
+              style={{
+                padding: "6px 14px",
+                background: "rgba(56, 189, 248, 0.15)",
+                border: "1px solid rgba(56, 189, 248, 0.3)",
+                borderRadius: "6px",
+                color: "#38bdf8",
+                fontSize: "0.82rem",
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+              onClick={() => setCompareModalOpen(true)}
+            >
+              ⚖️ Compare Drug Candidates ({drugInfos.length})
+            </button>
+          )}
         </div>
 
         {/* Input area */}
@@ -123,8 +193,17 @@ export default function HomePage() {
 
         {/* Chat thread */}
         <div className={styles.chatArea}>
-          <ChatInterface messages={messages} loading={loading} />
+          <ChatInterface messages={messages} loading={loading} streamStatus={streamStatus} />
         </div>
+
+        {/* Comparison Modal */}
+        {compareModalOpen && drugInfos.length >= 2 && (
+          <DrugComparisonModal
+            leftDrug={drugInfos[0]}
+            rightDrug={drugInfos[1]}
+            onClose={() => setCompareModalOpen(false)}
+          />
+        )}
       </main>
     </div>
   );

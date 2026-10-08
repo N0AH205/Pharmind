@@ -9,6 +9,7 @@ export interface Citation {
   source: string;       // e.g. "PubChem CID 2244", "DailyMed SPL 2023-04"
   url?: string;
   accessed_at?: string;
+  text?: string;        // Full passage text retrieved from ChromaDB
 }
 
 export interface FieldValue {
@@ -112,6 +113,7 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   smiles?: string;
+  text?: string;
   drugInfo?: DrugInfo;
   error?: string;
   timestamp: Date;

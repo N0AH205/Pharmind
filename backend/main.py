@@ -10,15 +10,16 @@ Endpoints:
   GET  /debug/query-builder  → show what query would be built for a SMILES
 """
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from pydantic import BaseModel
 from rag.schema import DrugInfo, QueryRequest
 from rag.pipeline import run_pipeline
 from rag.retriever import get_retriever
 from rag.query_builder import build_retrieval_query
-from ingest.pubchem import enrich_structure
+from ingest.local_chem import enrich_structure_local as enrich_structure
 
 app = FastAPI(
     title="Pharmer API",
@@ -55,7 +56,7 @@ async def query_drug(req: QueryRequest):
     """
     Accept a SMILES string and return a structured DrugInfo object.
 
-    Flow: SMILES → PubChem → ChromaDB → Qwen → Pydantic → JSON
+    Flow: SMILES → Local RDKit → ChromaDB → Qwen (Ollama) → Pydantic → JSON
     Falls back to mock data if ChromaDB is empty.
     """
     from rag.safety import ClinicalAdviceRefusal
@@ -72,6 +73,69 @@ async def query_drug(req: QueryRequest):
             status_code=500,
             content={"success": False, "error": str(exc)},
         )
+
+
+class ChatRequest(BaseModel):
+    question: str
+    history: list[dict] = []
+
+@app.post("/chat")
+async def chat_endpoint(req: ChatRequest):
+    """
+    Conversational Q&A endpoint for follow-up questions and pharmacology discussion.
+    """
+    from rag.chat import answer_chat_question
+    from rag.safety import check_query_safety
+    is_safe, refusal = await check_query_safety(req.question)
+    if not is_safe:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": refusal or "Query contains clinical advice and was refused."}
+        )
+
+    try:
+        reply = await answer_chat_question(req.question, history=req.history)
+        return {"success": True, "answer": reply}
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(exc)})
+
+
+@app.post("/upload-pdf")
+async def upload_pdf_endpoint(file: UploadFile = File(...), drug_cid: str = Query("custom")):
+    """
+    Ingest custom lab report or research paper PDF directly into local ChromaDB.
+    """
+    from ingest.pdf_ingest import ingest_pdf_bytes
+    try:
+        content = await file.read()
+        res = await ingest_pdf_bytes(content, filename=file.filename or "uploaded.pdf", drug_cid=drug_cid)
+        return {"success": True, "data": res}
+    except Exception as exc:
+        return JSONResponse(status_code=400, content={"success": False, "error": str(exc)})
+
+
+@app.post("/query/stream")
+async def query_drug_stream(req: QueryRequest):
+    """
+    Server-Sent Events (SSE) endpoint: streams status stages, tokens, and final DrugInfo JSON.
+    """
+    from fastapi.responses import StreamingResponse
+    import json
+
+    async def event_generator():
+        from rag.pipeline import run_pipeline_stream
+        async for event in run_pipeline_stream(req.smiles):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ── Debug endpoints (not part of the public API contract) ─────────────────────

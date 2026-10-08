@@ -12,9 +12,9 @@ chromadb>=0.5.3
 # Pull the model: ollama pull nomic-embed-text
 ollama>=0.2.1
 
-# LLM clients (Phase 3 — Ollama handles both embeddings + LLM)
-# openai==1.35.7          # for openai provider
-# anthropic==0.30.0       # for anthropic provider
+# LLM clients (Phase 3 — Ollama default, optional cloud providers)
+openai>=1.35.7
+anthropic>=0.30.0
 
 # Testing
 pytest==8.2.2

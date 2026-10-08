@@ -8,9 +8,10 @@ import styles from "./ChatInterface.module.css";
 interface Props {
   messages: ChatMessage[];
   loading: boolean;
+  streamStatus?: string;
 }
 
-export default function ChatInterface({ messages, loading }: Props) {
+export default function ChatInterface({ messages, loading, streamStatus }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,8 +64,25 @@ export default function ChatInterface({ messages, loading }: Props) {
             <div className={styles.userBubble}>
               <div className={styles.userAvatar} aria-label="You">You</div>
               <div className={styles.userContent}>
-                <span className={styles.userLabel}>Drug query</span>
-                <code className={styles.userSmiles}>{msg.smiles}</code>
+                <span className={styles.userLabel}>{msg.smiles ? "Drug query" : "Question"}</span>
+                {msg.smiles ? (
+                  <code className={styles.userSmiles}>{msg.smiles}</code>
+                ) : (
+                  <p className={styles.line}>{msg.text}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {msg.role === "assistant" && msg.text && (
+            <div className={styles.assistantBubble}>
+              <div className={styles.assistantAvatar} aria-label="Pharmer">
+                💬
+              </div>
+              <div className={styles.assistantContent}>
+                <p style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: "0.92rem", lineHeight: "1.6" }}>
+                  {msg.text}
+                </p>
               </div>
             </div>
           )}
@@ -121,7 +139,9 @@ export default function ChatInterface({ messages, loading }: Props) {
             <div className={styles.loadingDots}>
               <span /><span /><span />
             </div>
-            <span className={styles.loadingText}>Retrieving drug information…</span>
+            <span className={styles.loadingText}>
+              {streamStatus || "Retrieving drug information…"}
+            </span>
           </div>
         </div>
       )}

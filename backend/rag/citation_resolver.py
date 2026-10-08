@@ -72,6 +72,7 @@ def resolve_citations(
             Citation(
                 source=chunk.get("source", "Unknown source"),
                 url=chunk.get("url") or None,
+                text=chunk.get("text") or None,
             )
         )
 

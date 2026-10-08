@@ -56,6 +56,42 @@ async def generate_structured_output(
         raise ValueError(f"Unknown LLM_PROVIDER: {LLM_PROVIDER!r}")
 
 
+async def generate_structured_output_stream(
+    system_prompt: str,
+    user_message: str,
+    output_schema: type[BaseModel],
+):
+    """
+    Stream tokens from local Ollama instance while generating structured output.
+    Yields chunks of generated text tokens.
+    """
+    if LLM_PROVIDER == "ollama":
+        client = ollama_sdk.AsyncClient(host=OLLAMA_BASE_URL)
+        format_option: Any = "json"
+        if output_schema and hasattr(output_schema, "model_json_schema"):
+            format_option = output_schema.model_json_schema()
+
+        async for chunk in await client.chat(
+            model=OLLAMA_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_message},
+            ],
+            format=format_option,
+            stream=True,
+            options={
+                "temperature": 0.1,
+                "num_predict": 8192,
+                "num_ctx": 16384,
+            },
+        ):
+            if chunk and chunk.message and chunk.message.content:
+                yield chunk.message.content
+    else:
+        full_res = await generate_structured_output(system_prompt, user_message, output_schema)
+        yield json.dumps(full_res)
+
+
 # ── Ollama (Phase 2.5 / Phase 3) ─────────────────────────────────────────────
 
 async def _call_ollama(
@@ -66,10 +102,14 @@ async def _call_ollama(
     """
     Call local Ollama instance (Qwen, Llama, etc.) using the 0.6.x AsyncClient.
 
-    Uses format="json" to constrain Ollama to JSON-only output.
+    Passes schema.model_json_schema() to strictly constrain Ollama to the Pydantic schema.
     Temperature 0.1 = factual and deterministic.
     """
     client = ollama_sdk.AsyncClient(host=OLLAMA_BASE_URL)
+
+    format_option: Any = "json"
+    if schema and hasattr(schema, "model_json_schema"):
+        format_option = schema.model_json_schema()
 
     response = await client.chat(
         model=OLLAMA_MODEL,
@@ -77,7 +117,7 @@ async def _call_ollama(
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_message},
         ],
-        format="json",
+        format=format_option,
         options={
             "temperature": 0.1,
             "num_predict": 8192,  # Expanded schema needs ~6-8k tokens

@@ -2,23 +2,20 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install build dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
     curl \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements & install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy backend requirements and install
+COPY backend/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir pypdf python-multipart flashrank
 
-# Copy backend code
-COPY . .
-
-ENV CHROMA_PATH=/app/data/chroma
-ENV LLM_PROVIDER=gemini
-ENV PORT=8000
+# Copy backend source
+COPY backend/ .
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

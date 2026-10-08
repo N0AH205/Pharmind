@@ -38,30 +38,16 @@ def _resolve_chroma_path() -> str:
 
 CHROMA_PATH = _resolve_chroma_path()
 COLLECTION_NAME = "pharma_docs"
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-EMBED_MODEL = "gemini-embedding-001"
+from rag.embeddings import embed_text_local, embed_batch_local
 
 
 def _embed(text: str) -> list[float]:
     """
-    Embed text using Google text-embedding-004 (synchronous, httpx).
-    Uses the same GEMINI_API_KEY as the LLM provider.
+    Embed text locally using FastEmbed (BAAI/bge-small-en-v1.5, 384d).
+    100% offline, zero API keys required.
     """
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY is not set — cannot embed.")
+    return embed_text_local(text)
 
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{EMBED_MODEL}:embedContent?key={GEMINI_API_KEY}"
-    )
-    payload = {
-        "model": f"models/{EMBED_MODEL}",
-        "content": {"parts": [{"text": text[:8000]}]},
-        "taskType": "RETRIEVAL_QUERY",
-    }
-    resp = httpx.post(url, json=payload, timeout=30.0)
-    resp.raise_for_status()
-    return resp.json()["embedding"]["values"]
 
 
 class Retriever:
