@@ -1,4 +1,4 @@
-# Pharmind — AI Drug Research & Pharmacology Intelligence Platform
+# Pharmind / AI Drug Research & Pharmacology Intelligence Platform
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black)](https://nextjs.org/)
