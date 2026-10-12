@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import logging
 from typing import Sequence
+
+from rag.config import OFFLINE_MODE
+
 from fastembed import TextEmbedding
 
 logger = logging.getLogger(__name__)

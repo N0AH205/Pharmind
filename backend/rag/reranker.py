@@ -8,7 +8,11 @@ with zero network overhead and fast CPU inference.
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from typing import Any
+
+from rag.config import OFFLINE_MODE
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +24,17 @@ def get_reranker():
     if _reranker_instance is None:
         try:
             from flashrank import Ranker
-            _reranker_instance = Ranker(model_name="ms-marco-TinyBERT-L-2-v2", cache_dir="./.cache")
+            model_name = "ms-marco-TinyBERT-L-2-v2"
+            cache_dir = Path(os.getenv("PHARMER_MODEL_CACHE", "./.cache"))
+            model_dir = cache_dir / model_name
+            cached_model_ready = all((model_dir / name).exists() for name in (
+                "config.json", "tokenizer.json", "flashrank-TinyBERT-L-2-v2.onnx"
+            ))
+            if OFFLINE_MODE and not cached_model_ready:
+                logger.warning("Local reranker is not cached; offline mode will use vector ranking.")
+                _reranker_instance = False
+            else:
+                _reranker_instance = Ranker(model_name=model_name, cache_dir=str(cache_dir))
         except Exception as e:
             logger.warning(f"Could not load FlashRank ranker: {e}. Reranking will fallback to vector distance.")
             _reranker_instance = False

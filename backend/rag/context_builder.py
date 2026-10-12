@@ -41,10 +41,15 @@ def build_context(chunks: list[dict]) -> tuple[str, dict[str, dict]]:
             f"[{sid}]\n"
             f"Source : {chunk.get('source', 'Unknown')}\n"
             f"Field  : {chunk.get('field', 'general')}\n"
+            f"Retrieved for : {chunk.get('retrieval_group', chunk.get('field', 'general'))}\n"
+            f"Authors : {chunk.get('authors', 'not provided')}\n"
+            f"Journal : {chunk.get('journal', 'not provided')}\n"
+            f"Published : {chunk.get('publication_date', 'not provided')}\n"
+            f"DOI/PMID : {chunk.get('doi') or chunk.get('pmid') or 'not provided'}\n"
             f"URL    : {chunk.get('url', '')}\n"
         )
-        # Cap at 2500 chars — preserves context richness while discouraging verbatim reproduction
-        body = chunk.get("text", "").strip()[:2500]
+        # Bound prompt size while allowing relevant material from each retrieval topic.
+        body = chunk.get("text", "").strip()[:1200]
         parts.append(f"{header}\n{body}")
 
 

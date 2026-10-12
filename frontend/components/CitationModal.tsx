@@ -37,6 +37,13 @@ export default function CitationModal({ citation, onClose }: Props) {
         </div>
 
         <div className={styles.body}>
+          {(citation.authors || citation.journal || citation.publication_date || citation.doi || citation.pmid || citation.document_id) && (
+            <div className={styles.metadata}>
+              {[citation.authors, citation.journal, citation.publication_date, citation.pmid && `PMID ${citation.pmid}`, citation.doi && `DOI ${citation.doi}`, citation.document_id && `Record ${citation.document_id}`]
+                .filter(Boolean)
+                .join(" · ")}
+            </div>
+          )}
           <h4 className={styles.subTitle}>Retrieved Source Passage</h4>
           <div className={styles.passageContainer}>
             {citation.text ? (

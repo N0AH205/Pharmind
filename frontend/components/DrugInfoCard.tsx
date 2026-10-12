@@ -20,29 +20,29 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 const MISSING_MESSAGES: { [key: string]: string } = {
-  indications: "No approved indications or clinical uses found in current ingested reference labels.",
-  contraindications: "No absolute or relative contraindications documented in safety sources.",
-  adverse_effects: "No common or serious adverse drug reactions found in retrieved database sources.",
-  drug_interactions: "No clinically significant drug-drug or drug-disease interactions found in current knowledge base.",
-  mechanism_of_action: "Mechanism of action details not documented in retrieved clinical pharmacology sources.",
-  physiologic_effect: "Physiologic or systemic functional effects not indexed in current database.",
-  binding_affinity: "No quantitative binding affinity (Kd/Ki) data retrieved for this compound.",
-  selectivity: "Selectivity profile data not found in ingested pharmacology studies.",
-  potency: "No quantitative potency (EC50/ED50) metrics indexed in current sources.",
-  efficacy: "Efficacy parameters (Emax) not documented in reference research sources.",
-  absorption: "Absorption and bioavailability details not found in ingested pharmacokinetics labels.",
-  distribution: "Distribution and protein binding data not documented in current pk index.",
-  metabolism: "Hepatic metabolism and enzyme pathway details not indexed in ingested sources.",
-  excretion: "Elimination half-life and excretion pathways not found in pk reference labels.",
-  acute_toxicity: "No acute toxicity (LD50/LC50) values found in safety records.",
-  cytotoxicity: "No cytotoxicity or cell viability parameters retrieved for this compound.",
-  genetic_toxicology: "No genetic toxicology or carcinogenicity data found in current index.",
-  hazard_classifications: "No GHS or international hazard classifications found in safety records.",
-  background: "Historical or background introduction details not found in current index.",
-  discovery: "Discovery and molecular origin details not documented in reference history.",
-  development: "Preclinical optimization and development details not indexed.",
-  clinical_trials: "Clinical trials and approval history details not found in current database.",
-  classification: "No clinical classification details found in current ingested sources."
+  indications: "No indication evidence was retrieved for this field.",
+  contraindications: "No contraindication evidence was retrieved for this field.",
+  adverse_effects: "No adverse-effect evidence was retrieved for this field.",
+  drug_interactions: "No interaction evidence was retrieved for this field.",
+  mechanism_of_action: "No mechanism evidence was retrieved for this field.",
+  physiologic_effect: "No physiologic-effect evidence was retrieved for this field.",
+  binding_affinity: "No binding-affinity evidence was retrieved. This does not mean no measurements exist in the literature.",
+  selectivity: "No selectivity evidence was retrieved for this field.",
+  potency: "No potency evidence was retrieved. This does not mean no measurements exist in the literature.",
+  efficacy: "No efficacy evidence was retrieved for this field.",
+  absorption: "No absorption evidence was retrieved for this field.",
+  distribution: "No distribution evidence was retrieved for this field.",
+  metabolism: "No metabolism evidence was retrieved for this field.",
+  excretion: "No excretion evidence was retrieved for this field.",
+  acute_toxicity: "No acute-toxicity evidence was retrieved for this field.",
+  cytotoxicity: "No cytotoxicity evidence was retrieved for this field.",
+  genetic_toxicology: "No genetic-toxicology evidence was retrieved for this field.",
+  hazard_classifications: "No hazard-classification evidence was retrieved for this field.",
+  background: "No background evidence was retrieved for this field.",
+  discovery: "No discovery evidence was retrieved for this field.",
+  development: "No development evidence was retrieved for this field.",
+  clinical_trials: "No trial evidence was retrieved for this field.",
+  classification: "No classification evidence was retrieved for this field."
 };
 
 function formatChemicalFormula(formula: string): string {
@@ -64,6 +64,7 @@ function InfoBlock({
   field,
   slug,
   accentColor = "teal",
+  onSelectCitation,
 }: {
   label: string;
   field: FieldValue;
@@ -91,7 +92,7 @@ function InfoBlock({
         <span className={styles.infoBlockRight}>
           {isMissing && (
             <span className={`badge badge-amber ${styles.missingBadge}`}>
-              Not found
+              Not retrieved
             </span>
           )}
           <svg

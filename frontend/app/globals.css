@@ -1,38 +1,36 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
-
 /* ─── Design Tokens ──────────────────────────────────────────── */
 :root {
-  /* Core palette — slate/charcoal theme */
-  --bg-base: #0a0e14;
-  --bg-surface: #0f131a;
-  --bg-elevated: #151a22;
-  --bg-glass: rgba(15, 19, 26, 0.75);
+  /* Silver research archive with restrained cyan and coral indexing colors */
+  --bg-base: #f5f6f8;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f0f2f5;
+  --bg-glass: rgba(255, 255, 255, 0.92);
 
-  /* Accent — precise clinical teal */
-  --accent-primary: #0ea5e9;
-  --accent-primary-dim: rgba(14, 165, 233, 0.08);
-  --accent-primary-glow: rgba(14, 165, 233, 0.2);
+  --accent-primary: #087ca9;
+  --accent-primary-dim: rgba(37, 184, 253, 0.1);
+  --accent-primary-glow: rgba(37, 184, 253, 0.18);
 
-  /* Secondary accent — indigo */
-  --accent-secondary: #6366f1;
-  --accent-secondary-dim: rgba(99, 102, 241, 0.08);
+  --accent-secondary: #087aa8;
+  --accent-secondary-dim: rgba(91, 203, 255, 0.12);
+  --accent-coral: #ff8484;
+  --accent-red: #ff2f2f;
 
   /* Status colors */
-  --color-missing: #d97706;
-  --color-missing-dim: rgba(217, 119, 6, 0.08);
-  --color-error: #ef4444;
-  --color-success: #10b981;
+  --color-missing: #b45309;
+  --color-missing-dim: rgba(180, 83, 9, 0.08);
+  --color-error: #d92f38;
+  --color-success: #16836c;
 
   /* Text */
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-accent: var(--accent-primary);
+  --text-primary: #202933;
+  --text-secondary: #586574;
+  --text-muted: #7b8794;
+  --text-accent: #087ca9;
 
   /* Borders */
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-muted: rgba(255, 255, 255, 0.08);
-  --border-accent: rgba(14, 165, 233, 0.2);
+  --border-subtle: #e7e9ed;
+  --border-muted: #d9dde3;
+  --border-accent: rgba(37, 184, 253, 0.35);
 
   /* Spacing */
   --radius-sm: 4px;
@@ -41,8 +39,8 @@
   --radius-xl: 16px;
 
   /* Shadows */
-  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 24px rgba(14, 165, 233, 0.08);
+  --shadow-card: 0 8px 28px rgba(41, 53, 66, 0.08);
+  --shadow-glow: 0 0 0 3px rgba(37, 184, 253, 0.12);
 
   /* Transitions */
   --transition-fast: 120ms ease;
@@ -78,10 +76,9 @@ body::before {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background-image:
-    linear-gradient(rgba(14, 165, 233, 0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(14, 165, 233, 0.015) 1px, transparent 1px);
-  background-size: 48px 48px;
+  background-image: radial-gradient(rgba(73, 91, 108, 0.12) 0.7px, transparent 0.7px);
+  background-size: 18px 18px;
+  opacity: 0.2;
   pointer-events: none;
 }
 
@@ -131,15 +128,15 @@ code, pre {
 }
 
 .badge-teal {
-  background: rgba(0, 212, 170, 0.08);
+  background: rgba(37, 184, 253, 0.1);
   color: var(--accent-primary);
-  border: 1px solid rgba(0, 212, 170, 0.2);
+  border: 1px solid rgba(37, 184, 253, 0.24);
 }
 
 .badge-indigo {
-  background: rgba(99, 102, 241, 0.08);
-  color: var(--accent-secondary);
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: rgba(91, 203, 255, 0.12);
+  color: #087aa8;
+  border: 1px solid rgba(91, 203, 255, 0.3);
 }
 
 .badge-amber {
@@ -214,12 +211,12 @@ code, pre {
 
 .btn-primary {
   background: var(--accent-primary);
-  color: #000;
+  color: #10364a;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #00f0c0;
-  box-shadow: 0 0 20px rgba(0, 212, 170, 0.45);
+  background: #079bdc;
+  box-shadow: 0 5px 14px rgba(37, 184, 253, 0.22);
   transform: translateY(-1px);
 }
 

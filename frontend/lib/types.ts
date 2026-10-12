@@ -10,6 +10,12 @@ export interface Citation {
   url?: string;
   accessed_at?: string;
   text?: string;        // Full passage text retrieved from ChromaDB
+  publication_date?: string;
+  authors?: string;
+  journal?: string;
+  doi?: string;
+  pmid?: string;
+  document_id?: string;
 }
 
 export interface FieldValue {
@@ -116,5 +122,13 @@ export interface ChatMessage {
   text?: string;
   drugInfo?: DrugInfo;
   error?: string;
-  timestamp: Date;
+  timestamp: Date | string;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: ChatMessage[];
 }

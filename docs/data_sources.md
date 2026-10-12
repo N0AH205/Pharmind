@@ -1,76 +1,25 @@
-# Data Sources
+# Data sources and network behavior
 
-Reference for all data sources used in the Pharma RAG system.
+Pharmer stores indexed passages and their source metadata in the local ChromaDB database. Online ingestion is an explicit action; the database is not bundled with the source repository. Content use and redistribution remain subject to the original source's terms and copyright.
 
----
+## Integrated sources
 
-## PubChem ✅ Active (Phase 1+)
+| Source | How Pharmer uses it | Stored evidence and limits |
+|---|---|---|
+| [PubChem](https://pubchem.ncbi.nlm.nih.gov/) | Resolves compound properties and synonyms during ingestion | Compound records and identifiers; the runtime monograph structure resolver is local RDKit plus a small built-in drug dictionary |
+| [DailyMed](https://dailymed.nlm.nih.gov/) | Searches and downloads FDA Structured Product Label documents during ingestion or just-in-time ingestion | Clinical label sections are split into overlapping local passages; the selected label is the one with the most recognized sections |
+| [PubMed](https://pubmed.ncbi.nlm.nih.gov/) | Searches NCBI E-utilities for topic-specific literature during ingestion | Stores titles and abstracts, plus available authors, journal, publication date, DOI, and PMID; full article text is not downloaded |
+| [ClinicalTrials.gov](https://clinicaltrials.gov/) | Searches API v2 for studies with the drug listed as an intervention | Stores bounded study summaries, phase/status, interventions, planned outcomes, eligibility text, posted outcome analyses when present, update dates, NCT IDs, and record links. Registry records are not equivalent to peer-reviewed publications; study status and results must be checked at the cited record |
+| User PDFs | Extracts text from uploaded, text-based PDFs | Locally chunked passages; scanned pages require OCR first. Associate an upload with the exact compound name to retrieve it for name-filtered queries when there is no indexed CID |
 
-- **URL**: https://pubchem.ncbi.nlm.nih.gov
-- **API**: PUG REST — https://pubchemdocs.ncbi.nlm.nih.gov/pug-rest
-- **Auth**: None required
-- **Rate limit**: 5 requests/second
-- **Scale**: 120M+ compounds
-- **Used for**: Chemical structure, IUPAC name, molecular formula/weight, InChI, structure images, pharmacology text
+The current starter benchmark indexes a small, hardcoded drug set. Full ingestion retrieves up to three useful DailyMed labels per drug, several topic-focused batches of PubMed abstracts (deduplicated by PMID), and up to 15 ClinicalTrials.gov records. The quick-start Aspirin demo intentionally uses much smaller limits. These bounds make initial setup feasible, but this remains a discovery seed, not a comprehensive evidence corpus: PubMed full text is not downloaded, trial retrieval is capped, and source ranking may miss relevant records. The ingestion summary reports stored chunks by drug and field. Re-run ingestion to build or refresh the local index. Ingestion uses the local FastEmbed model; it does not require a cloud embedding API key.
 
-### Key endpoints
-```
-GET /compound/smiles/{smiles}/property/{fields}/JSON   → compound properties
-GET /compound/CID/{cid}/PNG                            → structure image
-GET /compound/CID/{cid}/description/JSON               → pharmacology text
-```
+## Network behavior
 
----
+Online source access is always enabled; `PHARMER_OFFLINE` is ignored. PubChem, DailyMed, PubMed, and ClinicalTrials.gov are contacted for lookups and source searches. Ollama inference can remain local; cloud LLM providers send prompts and retrieved evidence to the selected provider. If the FlashRank cache is missing, retrieval falls back to vector ranking.
 
-## DailyMed / FDA 🔜 Phase 2
+When `LLM_PROVIDER` is `openai`, `anthropic`, or `gemini`, user prompts, follow-up history, and retrieved passages are sent to that provider. Use Ollama with a local endpoint for local inference. The frontend has no externally hosted font dependency. Citation URLs are links; opening one in a browser is a user-initiated network action.
 
-- **URL**: https://dailymed.nlm.nih.gov
-- **API**: DailyMed Web Services v2 — https://dailymed.nlm.nih.gov/dailymed/app-support-web-services.cfm
-- **Auth**: None required
-- **Scale**: 150k+ FDA-approved drug labels
-- **Used for**: Indications, contraindications, adverse effects, drug interactions, ADME (clinical pharmacology section)
+## Ingestion metadata
 
-### Key endpoints
-```
-GET /services/v2/spls.json?drug_name={name}   → search labels
-GET /services/v2/spls/{set_id}.json           → full label
-```
-
----
-
-## PubMed 🔜 Phase 2
-
-- **URL**: https://pubmed.ncbi.nlm.nih.gov
-- **API**: NCBI E-utilities — https://www.ncbi.nlm.nih.gov/books/NBK25497/
-- **Auth**: Optional — NCBI_API_KEY raises rate limit from 3 to 10 req/s
-- **Scale**: 38M+ citations
-- **Used for**: MoA detail, pharmacokinetics, clinical evidence, drug interactions research
-
-### Key endpoints
-```
-GET /esearch.fcgi?db=pubmed&term={query}&retmax=N   → search → PMIDs
-GET /efetch.fcgi?db=pubmed&id={pmids}&retmode=xml   → fetch abstracts
-```
-
----
-
-## DrugBank ⏸ Requires License
-
-- **URL**: https://www.drugbank.ca
-- **Auth**: Academic/personal license is free; commercial use requires paid subscription
-- **Scale**: 14k+ drugs with structured MoA, ADME, and interaction data
-- **Used for**: Detailed MoA, complete ADME, structured drug interaction database
-
-> **Status**: Stubbed. Will be integrated once license is confirmed.
-> For academic/research use, apply at: https://www.drugbank.ca/legal/terms_of_use
-
----
-
-## Ingestion Strategy (Phase 2)
-
-1. For each drug in the benchmark set:
-   - Fetch PubChem data → embed → store in ChromaDB
-   - Fetch DailyMed label → parse sections → chunk → embed → store
-   - Fetch top-20 PubMed abstracts → embed → store
-2. Metadata stored with each chunk: source name, URL, drug name, field type
-3. At query time, ChromaDB retrieves top-K chunks by cosine similarity to SMILES/drug query
+Each indexed passage carries compound identity, topic, source label, URL, and where available bibliographic metadata (authors, journal, publication date, DOI/PMID, or source record ID). The monograph citation resolver uses the trusted metadata stored in ChromaDB rather than accepting model-created URLs. Older local databases may lack the new metadata fields; rebuild the index to populate them.

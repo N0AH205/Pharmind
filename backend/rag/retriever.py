@@ -9,8 +9,7 @@ Two-stage retrieval:
 This design ensures drug identity correctness (100%) before semantic scoring.
 SOURCE_N labelling is done in context_builder.py, not here.
 
-Embeddings: Google text-embedding-004 via Gemini API (uses GEMINI_API_KEY).
-No local Ollama required.
+Embeddings: local FastEmbed BGE-small ONNX model. No API key required.
 """
 
 from __future__ import annotations
@@ -19,6 +18,7 @@ import os
 
 import chromadb
 import httpx
+from rag.config import OFFLINE_MODE  # Loads backend/.env before paths are resolved.
 
 def _resolve_chroma_path() -> str:
     env_path = os.getenv("CHROMA_PATH")
@@ -66,6 +66,8 @@ class Retriever:
         self._ready = self.collection.count() > 0
 
     def is_ready(self) -> bool:
+        # Keep readiness correct when PDFs or ingestion add chunks after startup.
+        self._ready = self.collection.count() > 0
         return self._ready
 
     def chunk_count(self) -> int:
@@ -86,6 +88,8 @@ class Retriever:
         query: str,
         n_results: int = 8,
         pubchem_cid: str | None = None,
+        drug_name: str | None = None,
+        fields: list[str] | None = None,
     ) -> list[dict]:
         """
         Return the top-n most semantically relevant chunks for the query.
@@ -110,9 +114,19 @@ class Retriever:
 
         query_vec = _embed(query)
 
-        # Determine the effective pool size
+        # Combine drug identity and source-field filters so a section can
+        # directly search the matching DailyMed/PubMed categories.
+        filters: list[dict] = []
         if pubchem_cid:
-            pool_size = self.get_drug_chunk_count(pubchem_cid)
+            filters.append({"pubchem_cid": pubchem_cid})
+        elif drug_name:
+            filters.append({"drug": drug_name.strip().casefold()})
+        if fields:
+            filters.append({"field": {"$in": fields}})
+        where = filters[0] if len(filters) == 1 else ({"$and": filters} if filters else None)
+
+        if where:
+            pool_size = len(self.collection.get(where=where, include=[])["ids"])
         else:
             pool_size = self.collection.count()
 
@@ -127,9 +141,8 @@ class Retriever:
             "n_results": n,
             "include": ["documents", "metadatas", "distances"],
         }
-        if pubchem_cid:
-            # Stage 1: metadata filter — only this drug's chunks
-            kwargs["where"] = {"pubchem_cid": pubchem_cid}
+        if where:
+            kwargs["where"] = where
 
         results = self.collection.query(**kwargs)
 
@@ -142,6 +155,12 @@ class Retriever:
                 "distance":    dist,
                 "drug":        meta.get("drug", ""),
                 "pubchem_cid": meta.get("pubchem_cid", ""),
+                "authors": meta.get("authors", ""),
+                "publication_date": meta.get("publication_date", ""),
+                "journal": meta.get("journal", ""),
+                "doi": meta.get("doi", ""),
+                "pmid": meta.get("pmid", ""),
+                "document_id": meta.get("document_id", ""),
             }
             for doc, meta, dist in zip(
                 results["documents"][0],

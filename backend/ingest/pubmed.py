@@ -13,12 +13,14 @@ import os
 import xml.etree.ElementTree as ET
 
 import httpx
+from rag.config import require_network_allowed
 
 NCBI_API_KEY = os.getenv("NCBI_API_KEY", "")
 BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
 
 async def search_pubmed(query: str, max_results: int = 20) -> list[str]:
+    require_network_allowed("PubMed search")
     """
     Search PubMed and return a list of PMIDs matching the query.
 
@@ -49,6 +51,7 @@ async def search_pubmed(query: str, max_results: int = 20) -> list[str]:
 
 
 async def fetch_abstracts(pmids: list[str]) -> list[dict]:
+    require_network_allowed("PubMed abstract download")
     """
     Fetch abstracts for a list of PMIDs via EFetch.
 
@@ -107,11 +110,22 @@ async def fetch_abstracts(pmids: list[str]) -> list[dict]:
             if last:
                 authors.append(f"{last} {initials}".strip())
 
+        journal = article.findtext(".//Journal/Title") or ""
+        pub_date = article.findtext(".//JournalIssue/PubDate/Year") or article.findtext(".//JournalIssue/PubDate/MedlineDate") or ""
+        doi = ""
+        for locator in article.findall(".//ELocationID"):
+            if locator.get("EIdType") == "doi":
+                doi = (locator.text or "").strip()
+                break
+
         results.append({
             "pmid": pmid,
             "title": title,
             "abstract": abstract,
             "authors": authors,
+            "journal": journal,
+            "publication_date": pub_date,
+            "doi": doi,
         })
 
     return results

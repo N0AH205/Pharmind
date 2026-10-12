@@ -18,10 +18,13 @@ from __future__ import annotations
 
 import re
 import urllib.parse
+import asyncio
 
 import httpx
+from rag.config import require_network_allowed
 
 BASE_URL = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
+PUG_VIEW_URL = "https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound"
 
 PROPERTY_FIELDS = ",".join([
     "IUPACName",
@@ -52,6 +55,7 @@ def _is_readable_name(name: str) -> bool:
 
 
 async def get_compound_by_smiles(smiles: str) -> dict | None:
+    require_network_allowed("PubChem compound lookup")
     """
     Resolve a SMILES string to PubChem compound properties.
     Returns a dict with CID, IUPACName, MolecularFormula, etc., or None if not found.
@@ -72,6 +76,7 @@ async def get_compound_by_smiles(smiles: str) -> dict | None:
 
 
 async def get_synonyms(cid: int, max_synonyms: int = 10) -> list[str]:
+    require_network_allowed("PubChem synonym lookup")
     """
     Fetch human-readable synonyms for a PubChem CID.
 
@@ -104,6 +109,7 @@ async def get_structure_image_url(cid: int) -> str:
 
 
 async def get_pharmacology_text(cid: int) -> str | None:
+    require_network_allowed("PubChem pharmacology lookup")
     """
     Fetch the pharmacology / description text for a compound.
     Used in Phase 2 for knowledge base ingestion.
@@ -126,7 +132,128 @@ async def get_pharmacology_text(cid: int) -> str | None:
             return None
 
 
+_PUG_VIEW_HEADINGS = (
+    "Pharmacology and Biochemistry",
+    "Drug and Medication Information",
+    "Safety and Hazards",
+    "Toxicity",
+    "Experimental Properties",
+    "Biological Test Results",
+)
+
+_PUG_VIEW_FIELD_MAP = {
+    "pharmacodynamics": "pharmacodynamics",
+    "mechanism of action": "mechanism_of_action",
+    "absorption, distribution and excretion": "adme",
+    "protein binding": "adme",
+    "metabolism/metabolites": "adme",
+    "biological half-life": "adme",
+    "drug indication": "indications",
+    "drug classes": "therapeutic_classes",
+    "clinical trials": "clinical_trials",
+    "clinical studies": "clinical_trials",
+    "drug-drug interactions": "interactions",
+    "drug-food interactions": "interactions",
+    "drug warnings": "adverse_effects",
+    "adverse effects": "adverse_effects",
+    "drug induced liver injury": "adverse_effects",
+    "ghs classification": "hazard_classifications",
+    "carcinogen classification": "genetic_toxicology",
+    "toxicity summary": "toxicology",
+    "hepatotoxicity": "toxicology",
+    "acute effects": "acute_toxicity",
+    "human toxicity excerpts": "toxicology",
+    "non-human toxicity excerpts": "toxicology",
+    "effects during pregnancy and lactation": "toxicology",
+    "exposure routes": "toxicology",
+    "signs and symptoms": "toxicology",
+    "first approval": "history",
+    "drug development summary": "history",
+    "drug targets": "pharmacology",
+    "bioassay results": "pharmacology",
+}
+
+
+def _pug_view_value_strings(value) -> list[str]:
+    """Extract readable values from PUG View's nested annotation format."""
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, list):
+        return [text for item in value for text in _pug_view_value_strings(item)]
+    if not isinstance(value, dict):
+        return []
+
+    strings: list[str] = []
+    for key in ("String", "StringValue", "Number", "NumberValue", "Integer", "Float", "Boolean"):
+        if key in value:
+            strings.extend(_pug_view_value_strings(value[key]))
+    if strings:
+        return strings
+    return [text for item in value.values() for text in _pug_view_value_strings(item)]
+
+
+def _flatten_pug_view_sections(sections: list[dict], cid: int, url: str) -> list[dict]:
+    chunks: list[dict] = []
+
+    def visit(items: list[dict], parents: list[str]):
+        for section in items:
+            heading = str(section.get("TOCHeading") or "")
+            path = [*parents, heading] if heading else parents
+            field = _PUG_VIEW_FIELD_MAP.get(heading.lower())
+            for info in section.get("Information", []):
+                value_parts = _pug_view_value_strings(info.get("Value"))
+                if not value_parts:
+                    continue
+                details = [f"PubChem annotation section: {' > '.join(path)}"]
+                description = info.get("Description")
+                if description:
+                    details.append(str(description))
+                references = info.get("Reference") or []
+                if isinstance(references, str):
+                    references = [references]
+                details.extend(f"Source reference: {ref}" for ref in references[:3])
+                details.extend(value_parts)
+                chunks.append({"field": field or "pharmacology", "text": "\n".join(details), "url": url})
+            visit(section.get("Section", []), path)
+
+    visit(sections, [])
+    return chunks
+
+
+async def get_pug_view_evidence(cid: int) -> list[dict]:
+    """Fetch targeted PubChem annotations that complement labels and literature."""
+    require_network_allowed("PubChem PUG View annotation lookup")
+
+    async def fetch(client: httpx.AsyncClient, heading: str):
+        try:
+            response = await client.get(
+                f"{PUG_VIEW_URL}/{cid}/JSON",
+                params={"heading": heading},
+            )
+            if response.status_code != 200:
+                return []
+            sections = response.json().get("Record", {}).get("Section", [])
+            url = f"{PUG_VIEW_URL}/{cid}/JSON?heading={urllib.parse.quote_plus(heading)}"
+            return _flatten_pug_view_sections(sections, cid, url)
+        except Exception:
+            return []
+
+    # PubChem asks clients to keep traffic below five requests per second.
+    async with httpx.AsyncClient(timeout=40, limits=httpx.Limits(max_connections=4)) as client:
+        results = await asyncio.gather(*(fetch(client, heading) for heading in _PUG_VIEW_HEADINGS))
+    evidence = []
+    for group in results:
+        for item in group:
+            evidence.append({
+                **item,
+                "source": f"PubChem PUG View CID {cid}",
+                "document_id": f"pubchem-pugview-{cid}",
+            })
+    return evidence
+
+
 async def get_compound_by_name(name: str) -> dict | None:
+    require_network_allowed("PubChem name lookup")
     """
     Resolve a compound name to PubChem compound properties.
     Returns a dict with CID, IUPACName, MolecularFormula, etc., or None if not found.
@@ -146,7 +273,45 @@ async def get_compound_by_name(name: str) -> dict | None:
             return None
 
 
+async def get_rxnorm_name_correction(name: str) -> str | None:
+    """Return an unambiguous, high-confidence RxNorm correction for a drug name typo."""
+    require_network_allowed("RxNorm approximate drug-name lookup")
+    if not name.strip() or len(name.strip()) < 4:
+        return None
+
+    url = "https://rxnav.nlm.nih.gov/REST/approximateTerm.json"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(url, params={"term": name.strip(), "maxEntries": 10})
+            if response.status_code != 200:
+                return None
+            candidates = response.json().get("approximateGroup", {}).get("candidate", [])
+    except Exception:
+        return None
+
+    # RxNorm returns multiple synonym rows for one concept. Accept only a single
+    # top-ranked concept and require a strong score; PubChem is then used to
+    # independently confirm the corrected name before its identity is trusted.
+    top = [candidate for candidate in candidates if candidate.get("rank") == "1"]
+    concepts = {candidate.get("rxcui") for candidate in top if candidate.get("rxcui")}
+    if len(concepts) != 1:
+        return None
+    try:
+        if max(float(candidate.get("score", 0)) for candidate in top) < 7.0:
+            return None
+    except (TypeError, ValueError):
+        return None
+
+    named_candidates = [candidate for candidate in top if candidate.get("name")]
+    preferred = next(
+        (candidate for candidate in named_candidates if candidate.get("source") == "RXNORM"),
+        named_candidates[0] if named_candidates else None,
+    )
+    return str(preferred["name"]).strip() if preferred else None
+
+
 async def get_compound_by_cid(cid: int) -> dict | None:
+    require_network_allowed("PubChem CID lookup")
     """
     Resolve a PubChem CID to compound properties.
     Returns a dict with CID, IUPACName, MolecularFormula, etc., or None if not found.
@@ -193,6 +358,14 @@ async def enrich_structure(query: str) -> dict:
     if not props:
         props = await get_compound_by_name(query)
 
+    # Drug-name typos otherwise pass through as if they were resolved compounds,
+    # causing all CID-filtered evidence retrieval to miss. RxNorm supplies a
+    # candidate, but PubChem must independently resolve it before we accept it.
+    if not props:
+        corrected_name = await get_rxnorm_name_correction(query)
+        if corrected_name:
+            props = await get_compound_by_name(corrected_name)
+
     if not props:
         return {
             "smiles": query,
@@ -236,6 +409,7 @@ async def enrich_structure(query: str) -> dict:
     return {
         "smiles": props.get("CanonicalSMILES") or props.get("ConnectivitySMILES") or query,
         "inchi": props.get("InChI"),
+        "inchi_key": props.get("InChIKey"),
         "iupac_name": iupac,
         "common_name": common_name,
         "synonyms": synonyms,

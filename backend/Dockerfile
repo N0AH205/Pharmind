@@ -6,12 +6,15 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     build-essential \
+    libxrender1 \
+    libxext6 \
+    libsm6 \
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend requirements and install
 COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir pypdf python-multipart flashrank
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend source
 COPY backend/ .

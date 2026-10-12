@@ -75,11 +75,15 @@ export async function queryDrugStream(smiles: string, callbacks: StreamCallbacks
   }
 }
 
-export async function sendChatMessage(question: string, history: { role: string; content: string }[] = []) {
+export async function sendChatMessage(
+  question: string,
+  history: { role: "user" | "assistant"; content: string }[] = [],
+  activeDrug: { name: string; cid?: string } = { name: "" },
+) {
   const res = await fetch(`${API_BASE}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, history }),
+    body: JSON.stringify({ question, history, active_drug: { name: activeDrug.name, cid: activeDrug.cid ?? null } }),
   });
   if (!res.ok) {
     const errText = await res.text();
@@ -88,11 +92,11 @@ export async function sendChatMessage(question: string, history: { role: string;
   return res.json();
 }
 
-export async function uploadPDF(file: File, drugCid: string = "custom") {
+export async function uploadPDF(file: File, drugName: string = "") {
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch(`${API_BASE}/upload-pdf?drug_cid=${encodeURIComponent(drugCid)}`, {
+  const res = await fetch(`${API_BASE}/upload-pdf?drug_name=${encodeURIComponent(drugName)}`, {
     method: "POST",
     body: formData,
   });

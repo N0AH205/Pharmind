@@ -14,7 +14,7 @@ from fastapi import FastAPI, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from rag.schema import DrugInfo, QueryRequest
 from rag.pipeline import run_pipeline
 from rag.retriever import get_retriever
@@ -27,11 +27,11 @@ app = FastAPI(
     version="0.3.0",
 )
 
-# Allow Next.js dev server and tunnel origins during development/testing
+# The browser UI is served locally; the Next.js backend proxy calls FastAPI server-to-server.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -77,7 +77,8 @@ async def query_drug(req: QueryRequest):
 
 class ChatRequest(BaseModel):
     question: str
-    history: list[dict] = []
+    history: list[dict[str, str]] = Field(default_factory=list)
+    active_drug: dict[str, str | None] = Field(default_factory=dict)
 
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
@@ -94,21 +95,34 @@ async def chat_endpoint(req: ChatRequest):
         )
 
     try:
-        reply = await answer_chat_question(req.question, history=req.history)
+        reply = await answer_chat_question(
+            req.question,
+            history=req.history,
+            active_drug=req.active_drug,
+        )
         return {"success": True, "answer": reply}
     except Exception as exc:
         return JSONResponse(status_code=500, content={"success": False, "error": str(exc)})
 
 
 @app.post("/upload-pdf")
-async def upload_pdf_endpoint(file: UploadFile = File(...), drug_cid: str = Query("custom")):
+async def upload_pdf_endpoint(
+    file: UploadFile = File(...),
+    drug_cid: str = Query("custom"),
+    drug_name: str = Query(""),
+):
     """
     Ingest custom lab report or research paper PDF directly into local ChromaDB.
     """
     from ingest.pdf_ingest import ingest_pdf_bytes
     try:
         content = await file.read()
-        res = await ingest_pdf_bytes(content, filename=file.filename or "uploaded.pdf", drug_cid=drug_cid)
+        res = await ingest_pdf_bytes(
+            content,
+            filename=file.filename or "uploaded.pdf",
+            drug_cid=drug_cid,
+            drug_name=drug_name,
+        )
         return {"success": True, "data": res}
     except Exception as exc:
         return JSONResponse(status_code=400, content={"success": False, "error": str(exc)})
@@ -158,8 +172,8 @@ async def debug_retrieval(
         structure_data = await enrich_structure(smiles)
         query = build_retrieval_query(structure_data)
         retriever = get_retriever()
-
-        chunks = await retriever.retrieve(query, n_results=n)
+        cid = str(structure_data.get("pubchem_cid") or "") or None
+        chunks = await retriever.retrieve(query, n_results=n, pubchem_cid=cid)
 
         # Summarise field and source coverage
         field_counts: dict[str, int] = {}

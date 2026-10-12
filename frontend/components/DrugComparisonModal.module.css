@@ -11,15 +11,15 @@
 }
 
 .modal {
-  background: #111622;
-  border: 1px solid rgba(0, 212, 170, 0.25);
+  background: #ffffff;
+  border: 1px solid #dfe4e9;
   border-radius: 12px;
   width: 100%;
   max-width: 1000px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 22px 54px rgba(30, 43, 56, 0.22);
 }
 
 .header {
@@ -27,8 +27,8 @@
   align-items: flex-start;
   justify-content: space-between;
   padding: 16px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid #e7e9ed;
+  background: #f7f8fa;
 }
 
 .titleGroup {
@@ -76,7 +76,7 @@
 
 .divider {
   width: 1px;
-  background: rgba(255, 255, 255, 0.08);
+  background: #f0f2f5;
 }
 
 .col {
@@ -86,14 +86,14 @@
 }
 
 .colHeader {
-  border-bottom: 1px solid rgba(0, 212, 170, 0.2);
+  border-bottom: 1px solid rgba(37, 184, 253, 0.24);
   padding-bottom: 8px;
 }
 
 .colHeader h4 {
   margin: 0;
   font-size: 1.1rem;
-  color: var(--accent-primary, #00d4aa);
+  color: #087ca9;
 }
 
 .colHeader code {
@@ -119,16 +119,16 @@
 
 .footer {
   padding: 14px 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid #e7e9ed;
   display: flex;
   justify-content: flex-end;
-  background: rgba(0, 0, 0, 0.2);
+  background: #f7f8fa;
 }
 
 .actionBtn {
   padding: 8px 18px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #ffffff;
+  border: 1px solid #dfe4e9;
   border-radius: 6px;
   color: #f1f5f9;
   font-size: 0.85rem;

@@ -14,7 +14,12 @@ from rag.embeddings import embed_text_local
 logger = logging.getLogger(__name__)
 
 
-async def ingest_pdf_bytes(file_bytes: bytes, filename: str, drug_cid: str = "custom") -> dict:
+async def ingest_pdf_bytes(
+    file_bytes: bytes,
+    filename: str,
+    drug_cid: str = "custom",
+    drug_name: str = "",
+) -> dict:
     """
     Extract text from a PDF file byte stream, chunk it into ~1000 character segments,
     generate local embeddings, and store them in ChromaDB.
@@ -55,15 +60,17 @@ async def ingest_pdf_bytes(file_bytes: bytes, filename: str, drug_cid: str = "cu
 
         ids, embeddings, documents, metadatas = [], [], [], []
         clean_name = filename.replace(" ", "_").lower()
+        associated_drug = drug_name.strip().casefold() or "custom literature"
+        clean_drug = "_".join(associated_drug.split())
 
         for i, c in enumerate(chunks):
-            chunk_id = f"custom_pdf_{clean_name}_{i}"
+            chunk_id = f"custom_pdf_{clean_drug}_{clean_name}_{i}"
             vec = embed_text_local(c["text"])
             ids.append(chunk_id)
             embeddings.append(vec)
             documents.append(c["text"])
             metadatas.append({
-                "drug": "Custom Literature",
+                "drug": associated_drug,
                 "pubchem_cid": drug_cid,
                 "field": "research",
                 "source": f"Uploaded PDF: {filename} (p.{c['page']})",

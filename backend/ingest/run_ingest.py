@@ -4,9 +4,8 @@ Knowledge base ingestion script — Phase 2.
 Populates ChromaDB with pharmaceutical text from PubChem, DailyMed, and PubMed
 for a benchmark set of drugs.
 
-Embeddings are generated via Google text-embedding-004 (Gemini API).
-Requires GEMINI_API_KEY to be set in backend/.env.
-No local Ollama required.
+Embeddings are generated locally with FastEmbed; downloading source literature
+from PubChem, DailyMed, and PubMed requires network access.
 
 Run once (from the backend/ directory):
     python -m ingest.run_ingest
@@ -32,15 +31,16 @@ if hasattr(sys.stdout, "reconfigure"):
 
 import chromadb
 import httpx
+from rag.config import OFFLINE_MODE
 
-from ingest.pubchem import get_compound_by_smiles, get_pharmacology_text, get_synonyms
+from ingest.pubchem import get_compound_by_cid, get_compound_by_smiles, get_pharmacology_text, get_pug_view_evidence, get_synonyms
+from ingest.chembl import get_chembl_activity_evidence
 from ingest.dailymed import search_drug_labels, get_label_sections
 from ingest.pubmed import search_pubmed, fetch_abstracts
+from ingest.clinicaltrials import search_drug_trials
 
 CHROMA_PATH = os.getenv("CHROMA_PATH", "../data/chroma")
 COLLECTION_NAME = "pharma_docs"
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-EMBED_MODEL = "gemini-embedding-001"
 
 # Benchmark drug set — expand for Phase 4 evaluation
 # cid field is an optional override: use it when SMILES-based PubChem lookup
@@ -59,6 +59,24 @@ BENCHMARK_DRUGS: list[dict] = [
 
 
 from rag.embeddings import embed_text_local
+
+
+def _chunk_text(text: str, max_chars: int = 1800, overlap: int = 200) -> list[str]:
+    """Split long source sections into overlapping, searchable passages."""
+    text = " ".join(text.split())
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(start + max_chars, len(text))
+        if end < len(text):
+            boundary = text.rfind(". ", start, end)
+            if boundary > start + max_chars // 2:
+                end = boundary + 1
+        chunks.append(text[start:end].strip())
+        if end >= len(text):
+            break
+        start = max(start + 1, end - overlap)
+    return [chunk for chunk in chunks if chunk]
 
 
 def embed_text(text: str) -> list[float]:
@@ -103,7 +121,7 @@ async def resolve_cid(
 
 # -- Per-drug ingestion --------------------------------------------------------
 
-async def ingest_drug(drug: dict, collection) -> int:
+async def ingest_drug(drug: dict, collection, pubmed_limit: int | None = None) -> int:
     """
     Fetch data for one drug from PubChem, DailyMed, and PubMed,
     embed each chunk, and upsert into ChromaDB.
@@ -134,6 +152,8 @@ async def ingest_drug(drug: dict, collection) -> int:
 
     # 1. PubChem — pharmacology description text
     if cid:
+        structure_props = await get_compound_by_cid(cid)
+        inchi_key = drug.get("inchi_key") or (structure_props or {}).get("InChIKey")
         pharm_text = await get_pharmacology_text(cid)
         if pharm_text:
             chunks.append({
@@ -147,6 +167,27 @@ async def ingest_drug(drug: dict, collection) -> int:
             print(f"  PubChem pharmacology: {len(pharm_text):,} chars")
         else:
             print(f"  PubChem: no pharmacology text for CID {cid}")
+
+        # PUG View adds annotated pharmacology, pharmacokinetics, indications,
+        # interaction, toxicity, and hazard evidence missing from the basic
+        # compound description endpoint.
+        for annotation in await get_pug_view_evidence(cid):
+            for passage in _chunk_text(annotation["text"]):
+                chunks.append({
+                    **annotation,
+                    "text": passage,
+                    "drug": canonical_name,
+                    "pubchem_cid": cid_str,
+                })
+
+        # ChEMBL is queried by exact InChIKey to avoid mixing a salt, isomer,
+        # or similarly named molecule into quantitative assay results.
+        for activity in await get_chembl_activity_evidence(inchi_key):
+            chunks.append({
+                **activity,
+                "drug": canonical_name,
+                "pubchem_cid": cid_str,
+            })
     else:
         print(f"  PubChem: CID not resolved for '{name}'")
 
@@ -179,7 +220,8 @@ async def ingest_drug(drug: dict, collection) -> int:
                 seen_setids.add(sid)
                 unique_labels.append(l)
 
-    # Limit to top 20 unique labels total to keep requests fast
+    # Keep multiple distinct labels: dosage forms and manufacturers can carry
+    # materially different indications, warnings, and pharmacokinetic details.
     unique_labels = unique_labels[:20]
 
     if unique_labels:
@@ -187,52 +229,55 @@ async def ingest_drug(drug: dict, collection) -> int:
         tasks = [get_label_sections(l.get("setid")) for l in unique_labels if l.get("setid")]
         all_sections = await asyncio.gather(*tasks)
 
-        # Select the label containing the highest number of non-empty clinical sections
-        best_idx = 0
-        max_sections = 0
-        for idx, secs in enumerate(all_sections):
-            if len(secs) > max_sections:
-                max_sections = len(secs)
-                best_idx = idx
+        ranked_labels = sorted(
+            zip(unique_labels, all_sections), key=lambda pair: len(pair[1]), reverse=True
+        )
+        selected = [(label, sections) for label, sections in ranked_labels if sections][:3]
+        print(f"  DailyMed: analyzed {len(unique_labels)} labels from {len(search_candidates)} search terms; retaining {len(selected)} useful labels")
 
-        sections = all_sections[best_idx] if all_sections else {}
-        selected_label = unique_labels[best_idx]
-        set_id = selected_label.get("setid")
-        title = selected_label.get("title", "Unknown label")
-
-        print(f"  DailyMed: analyzed {len(unique_labels)} unique label(s) from {len(search_candidates)} search terms. Selected: '{title[:60]}...' (setid: {set_id}, sections: {max_sections})")
-
-        for field_key, text in sections.items():
-            if text:
-                chunks.append({
-                    "text": text[:4000],
-                    "source": f"DailyMed SPL – {canonical_name}",
-                    "url": f"https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid={set_id}",
-                    "drug": canonical_name,
-                    "pubchem_cid": cid_str,
-                    "field": field_key,
-                })
+        for selected_label, sections in selected:
+            set_id = selected_label.get("setid")
+            title = selected_label.get("title", "Unknown label")
+            print(f"    Retained: '{title[:60]}' (setid: {set_id}, sections: {len(sections)})")
+            for field_key, text in sections.items():
+                if text:
+                    for passage in _chunk_text(text):
+                        chunks.append({
+                            "text": passage,
+                            "source": f"DailyMed SPL – {canonical_name}: {title}",
+                            "url": f"https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid={set_id}",
+                            "drug": canonical_name,
+                            "pubchem_cid": cid_str,
+                            "field": field_key,
+                            "document_id": str(set_id or ""),
+                        })
     else:
         print(f"  DailyMed: no labels found for '{name}' (searched synonyms: {search_candidates})")
 
     # 3. PubMed — field-specific research abstracts
     # Fetch targeted queries for each schema section to maximise keyword coverage
     pubmed_queries = [
-        (f"{name} mechanism of action pharmacology",                    "moa",            6),
-        (f"{name} pharmacokinetics ADME absorption distribution metabolism excretion", "adme", 6),
-        (f"{name} adverse effects side effects toxicity",               "adverse_effects", 5),
-        (f"{name} clinical indications therapeutic use treatment",      "indications",    4),
-        (f"{name} toxicology LD50 cytotoxicity genotoxicity",           "toxicology",     4),
-        (f"{name} drug interactions contraindications",                 "interactions",   4),
-        (f"{name} history discovery clinical trials approval",          "history",        4),
+        (f"{name} mechanism of action pharmacology receptor target", "moa", 18),
+        (f"{name} pharmacokinetics ADME absorption distribution metabolism excretion", "adme", 18),
+        (f"{name} adverse effects safety side effects toxicity postmarketing", "adverse_effects", 18),
+        (f"{name} clinical indications therapeutic use treatment efficacy", "indications", 18),
+        (f"{name} toxicology carcinogenicity genotoxicity reproductive toxicity", "toxicology", 15),
+        (f"{name} drug interactions contraindications CYP", "interactions", 15),
+        (f"{name} history discovery development approval review", "history", 15),
+        (f"{name} randomized controlled trial clinical outcomes", "clinical_trials", 18),
+        (f"{name} systematic review meta-analysis", "research_review", 15),
+        (f"{name} renal impairment hepatic impairment dose adjustment", "adme", 12),
     ]
 
     pm_count = 0
+    seen_pmids: set[str] = set()
     for query_str, field_label, max_res in pubmed_queries:
-        pmids = await search_pubmed(query_str, max_results=max_res)
+        result_limit = min(max_res, pubmed_limit) if pubmed_limit else max_res
+        pmids = await search_pubmed(query_str, max_results=result_limit)
         abstracts = await fetch_abstracts(pmids)
         for ab in abstracts:
-            if ab["abstract"]:
+            if ab["abstract"] and ab["pmid"] not in seen_pmids:
+                seen_pmids.add(ab["pmid"])
                 chunks.append({
                     "text": f"{ab['title']}\n\n{ab['abstract']}",
                     "source": f"PubMed PMID {ab['pmid']}",
@@ -240,9 +285,32 @@ async def ingest_drug(drug: dict, collection) -> int:
                     "drug": canonical_name,
                     "pubchem_cid": cid_str,
                     "field": field_label,
+                    "authors": "; ".join(ab.get("authors", [])),
+                    "publication_date": ab.get("publication_date", ""),
+                    "journal": ab.get("journal", ""),
+                    "doi": ab.get("doi", ""),
+                    "pmid": ab.get("pmid", ""),
                 })
                 pm_count += 1
     print(f"  PubMed: {pm_count} abstract(s) across {len(pubmed_queries)} field queries")
+
+    # 4. ClinicalTrials.gov — registered study summaries and posted results.
+    # Limit the count to keep first-run ingestion manageable; source records remain linked.
+    trial_limit = 2 if pubmed_limit else 15
+    trials = await search_drug_trials(name, limit=trial_limit)
+    for trial in trials:
+        for passage in _chunk_text(trial["text"]):
+            chunks.append({
+                "text": passage,
+                "source": f"ClinicalTrials.gov {trial['nct_id']}: {trial['title']}",
+                "url": trial["url"],
+                "drug": canonical_name,
+                "pubchem_cid": cid_str,
+                "field": "clinical_trials",
+                "publication_date": trial.get("publication_date", ""),
+                "document_id": trial["nct_id"],
+            })
+    print(f"  ClinicalTrials.gov: {len(trials)} study record(s)")
 
     if not chunks:
         print(f"  WARNING: No chunks collected for {name} — skipping")
@@ -265,6 +333,12 @@ async def ingest_drug(drug: dict, collection) -> int:
             "field":       chunk["field"],
             "source":      chunk["source"],
             "url":         chunk["url"],
+            "authors": chunk.get("authors", ""),
+            "publication_date": chunk.get("publication_date", ""),
+            "journal": chunk.get("journal", ""),
+            "doi": chunk.get("doi", ""),
+            "pmid": chunk.get("pmid", ""),
+            "document_id": chunk.get("document_id", ""),
         })
 
     collection.upsert(
@@ -311,6 +385,19 @@ def print_db_summary(collection):
 # -- Entry point ---------------------------------------------------------------
 
 async def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Build Pharmer's local literature index")
+    parser.add_argument(
+        "--quickstart",
+        action="store_true",
+        help="Index a small Aspirin demo corpus for a fast first run",
+    )
+    args = parser.parse_args()
+
+    if OFFLINE_MODE:
+        raise RuntimeError("Source ingestion needs internet access. Set PHARMER_OFFLINE=false for the initial data download.")
+
     print("=" * 60)
     print("PharmaRAG — Knowledge Base Ingestion (Local FastEmbed)")
     print(f"Embedding model : BAAI/bge-small-en-v1.5 (Local FastEmbed ONNX)")
@@ -326,23 +413,20 @@ async def main():
         return
 
     db = chromadb.PersistentClient(path=CHROMA_PATH)
-    try:
-        db.delete_collection(name=COLLECTION_NAME)
-        print("Reset existing ChromaDB collection for local 384d FastEmbed embeddings...")
-    except Exception:
-        pass
-
     collection = db.get_or_create_collection(
         name=COLLECTION_NAME,
         metadata={"hnsw:space": "cosine"},
     )
 
+    drugs = BENCHMARK_DRUGS[:1] if args.quickstart else BENCHMARK_DRUGS
     total = 0
-    for drug in BENCHMARK_DRUGS:
-        total += await ingest_drug(drug, collection)
+    for drug in drugs:
+        total += await ingest_drug(drug, collection, pubmed_limit=2 if args.quickstart else None)
 
     print("\n" + "=" * 60)
     print("Ingestion complete!")
+    if args.quickstart:
+        print("Quick-start index is limited to Aspirin. Run without --quickstart to index the full starter set.")
     print_db_summary(collection)
     print("=" * 60)
 

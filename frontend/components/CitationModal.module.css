@@ -1,7 +1,7 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(8, 10, 15, 0.75);
+  background: rgba(32, 41, 51, 0.4);
   backdrop-filter: blur(8px);
   z-index: 1000;
   display: flex;
@@ -17,15 +17,15 @@
 }
 
 .modal {
-  background: #111622;
-  border: 1px solid rgba(0, 212, 170, 0.25);
+  background: #ffffff;
+  border: 1px solid #dfe4e9;
   border-radius: var(--radius-lg, 12px);
   width: 100%;
   max-width: 650px;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(0, 212, 170, 0.1);
+  box-shadow: 0 22px 54px rgba(30, 43, 56, 0.22);
   overflow: hidden;
   animation: slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -40,8 +40,8 @@
   align-items: flex-start;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid #e7e9ed;
+  background: #f7f8fa;
 }
 
 .titleGroup {
@@ -64,7 +64,7 @@
 .urlLink {
   display: inline-block;
   font-size: 0.75rem;
-  color: var(--accent-primary, #00d4aa);
+  color: #087ca9;
   text-decoration: none;
   margin-top: 2px;
   word-break: break-all;
@@ -86,7 +86,7 @@
 }
 
 .closeBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: #edf2f5;
   color: var(--text-primary, #ffffff);
 }
 
@@ -94,6 +94,14 @@
   padding: 20px;
   overflow-y: auto;
   flex: 1;
+}
+
+.metadata {
+  margin-bottom: 16px;
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .subTitle {
@@ -106,8 +114,8 @@
 }
 
 .passageContainer {
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: #f5f7f9;
+  border: 1px solid #e4e8ec;
   border-radius: 8px;
   padding: 16px;
   max-height: 350px;
@@ -118,7 +126,7 @@
   margin: 0;
   font-size: 0.88rem;
   line-height: 1.6;
-  color: #cbd5e1;
+  color: #485563;
   white-space: pre-wrap;
   font-family: var(--font-sans, inherit);
 }
@@ -132,16 +140,16 @@
 
 .footer {
   padding: 12px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid #e7e9ed;
   display: flex;
   justify-content: flex-end;
-  background: rgba(0, 0, 0, 0.2);
+  background: #f7f8fa;
 }
 
 .actionBtn {
   padding: 6px 16px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #ffffff;
+  border: 1px solid #dfe4e9;
   border-radius: 6px;
   color: var(--text-primary, #f1f5f9);
   font-size: 0.85rem;
@@ -151,5 +159,5 @@
 }
 
 .actionBtn:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: #edf2f5;
 }

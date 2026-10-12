@@ -25,6 +25,7 @@ Usage in pipeline.py:
 from __future__ import annotations
 
 import logging
+import re
 
 from rag.schema import Citation
 
@@ -73,6 +74,12 @@ def resolve_citations(
                 source=chunk.get("source", "Unknown source"),
                 url=chunk.get("url") or None,
                 text=chunk.get("text") or None,
+                publication_date=chunk.get("publication_date") or None,
+                authors=chunk.get("authors") or None,
+                journal=chunk.get("journal") or None,
+                doi=chunk.get("doi") or None,
+                pmid=chunk.get("pmid") or None,
+                document_id=chunk.get("document_id") or None,
             )
         )
 
@@ -88,6 +95,11 @@ def _resolve_field_dict(field: dict | str | None, source_map: dict) -> dict:
             "missing": content_str is None,
             "sources": [],
         }
+
+    # SOURCE_N references are converted into trusted citation badges below;
+    # remove them from prose if the model also echoed them inline.
+    if isinstance(field.get("content"), str):
+        field["content"] = re.sub(r"\s*\[SOURCE_\d+\]", "", field["content"]).strip()
 
     raw_ids = field.pop("source_ids", None)
     citations = resolve_citations(raw_ids, source_map)

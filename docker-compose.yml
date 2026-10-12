@@ -6,16 +6,20 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: pharmer-backend
+    env_file:
+      - ./backend/.env
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/app/data
-      - pharmer-cache:/.cache
+      - pharmer-cache:/app/.cache
     environment:
       - PORT=8000
       - CHROMA_PATH=/app/data/chroma
-      - LLM_PROVIDER=ollama
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
+      - PHARMER_MODEL_CACHE=/app/.cache
+      - HF_HOME=/app/.cache/huggingface
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -26,9 +30,9 @@ services:
       dockerfile: Dockerfile
     container_name: pharmer-frontend
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - BACKEND_URL=http://backend:8000
     depends_on:
       - backend
     restart: unless-stopped

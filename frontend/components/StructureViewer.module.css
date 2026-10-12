@@ -23,8 +23,8 @@
   height: 100%;
   object-fit: contain;
   padding: 12px;
-  /* Invert black-on-white molecular drawings to clean white-on-dark for slate theme */
-  filter: invert(0.9) contrast(1.1) brightness(1.05);
+  /* PubChem's black-on-white structure image stays crisp on the light canvas. */
+  filter: contrast(1.04);
 }
 
 .imageFallback {
@@ -104,7 +104,7 @@
 .codeBlock {
   color: var(--accent-primary);
   background: var(--accent-primary-dim);
-  border: 1px solid rgba(14, 165, 233, 0.1);
+  border: 1px solid rgba(37, 184, 253, 0.22);
 }
 
 .codeBlockMuted {

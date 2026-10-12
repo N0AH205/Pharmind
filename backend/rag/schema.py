@@ -22,6 +22,12 @@ class Citation(BaseModel):
     url: Optional[str] = None
     accessed_at: Optional[str] = None
     text: Optional[str] = None
+    publication_date: Optional[str] = None
+    authors: Optional[str] = None
+    journal: Optional[str] = None
+    doi: Optional[str] = None
+    pmid: Optional[str] = None
+    document_id: Optional[str] = None
 
 
 
@@ -132,4 +138,3 @@ class DrugInfo(BaseModel):
 
 class QueryRequest(BaseModel):
     smiles: str = Field(..., min_length=1, description="A valid SMILES string")
-

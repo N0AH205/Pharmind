@@ -5,6 +5,7 @@ import { uploadPDF } from "@/lib/api";
 import styles from "./PDFDropzone.module.css";
 
 export default function PDFDropzone() {
+  const [drugName, setDrugName] = useState("");
   const [uploading, setUploading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
@@ -22,7 +23,7 @@ export default function PDFDropzone() {
     setIsError(false);
 
     try {
-      const res = await uploadPDF(file);
+      const res = await uploadPDF(file, drugName);
       if (res.success) {
         setStatus(`Successfully indexed ${res.data.chunks_stored} passages from ${file.name}`);
         setIsError(false);
@@ -68,6 +69,18 @@ export default function PDFDropzone() {
           <span className={styles.sub}>Drop lab reports or papers to index into ChromaDB</span>
         </div>
       </div>
+
+      <label className={styles.sub}>
+        Associate with compound name (optional)
+        <input
+          value={drugName}
+          onChange={(event) => setDrugName(event.target.value)}
+          onClick={(event) => event.stopPropagation()}
+          placeholder="Use the same name as your query"
+          className={styles.drugNameInput}
+          aria-label="Compound name for uploaded literature"
+        />
+      </label>
 
       {status && (
         <div className={`${styles.status} ${isError ? styles.statusError : styles.statusSuccess}`}>

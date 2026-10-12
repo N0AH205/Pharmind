@@ -2,10 +2,14 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Pharmer ",
+  title: {
+    default: "Pharmind",
+    template: "%s · Pharmind",
+  },
+  icons: { icon: "/pharmind-icon.png", apple: "/pharmind-icon.png" },
   description:
-    "A Retrieval-Augmented Generation tool for structured, cited drug-information queries. Enter a SMILES string to retrieve Mechanism of Action, ADME, Chemical Structure, Indications, Contraindications, Adverse Effects, and Drug Interactions.",
-  keywords: ["drug information", "pharmacology", "RAG", "SMILES", "pharmaceutical"],
+    "AI Drug Research Platform",
+  keywords: ["Pharmind", "drug information", "pharmacology", "RAG", "SMILES", "pharmaceutical research"],
 };
 
 export default function RootLayout({

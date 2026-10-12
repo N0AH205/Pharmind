@@ -19,13 +19,27 @@ from __future__ import annotations
 FIELD_SUFFIXES: dict[str | None, str] = {
     None:              "pharmacology mechanism clinical",
     "moa":             "mechanism of action inhibitor receptor target",
+    "physiologic_effect": "pharmacodynamics physiological effects clinical response serotonin reuptake",
+    "binding_affinity": "binding affinity Ki Kd dissociation constant cyclooxygenase COX-1 COX-2 enzyme assay",
+    "potency":          "potency IC50 EC50 ED50 concentration dose response COX-1 COX-2 assay",
+    "efficacy":         "maximum efficacy Emax pharmacodynamic dose response inhibition prostaglandin",
+    "selectivity":      "selectivity COX-1 COX-2 ratio inhibition concentration assay",
+    "cytotoxicity":     "cytotoxicity cell viability cell line IC50 EC50 assay",
+    "genetic_toxicology": "mutagenicity genotoxicity carcinogenicity reproductive toxicity Ames assay",
+    "hazard_classifications": "GHS hazard classification hazard statements pictograms carcinogen classification",
     "indications":     "indications therapeutic use treatment",
     "contraindications": "contraindications warnings precautions",
     "adverse_effects": "adverse effects side effects toxicity",
     "drug_interactions": "drug interactions clinical pharmacology",
+    "interactions":    "drug interactions contraindications clinical pharmacology",
     "adme":            "absorption distribution metabolism excretion pharmacokinetics",
     "toxicology":      "toxicology acute toxicity ld50 cytotoxicity hazard",
+    "acute_toxicity":  "acute toxicity overdose LD50 lethal dose animal route",
     "history":         "history discovery development origin clinical trials",
+    "clinical_trials": "clinical trial phase study design outcomes enrollment results",
+    "research_review": "systematic review meta-analysis evidence efficacy safety pharmacology",
+    "safety": "warnings precautions contraindications adverse reactions interactions",
+    "dosage": "dosage administration dose formulation strength clinical use",
 }
 
 

@@ -16,6 +16,7 @@ from typing import Any
 
 import ollama as ollama_sdk
 from pydantic import BaseModel
+from rag.config import require_network_allowed
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -26,6 +27,29 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+
+
+def _llm_output_schema(schema: type[BaseModel]) -> dict[str, Any]:
+    """Use SOURCE_N strings in model output; trusted citations are resolved later."""
+    result = schema.model_json_schema()
+
+    def rewrite(node: Any) -> None:
+        if isinstance(node, dict):
+            properties = node.get("properties")
+            if isinstance(properties, dict) and "sources" in properties:
+                properties.pop("sources")
+                properties["source_ids"] = {"type": "array", "items": {"type": "string"}}
+            required = node.get("required")
+            if isinstance(required, list):
+                node["required"] = ["source_ids" if key == "sources" else key for key in required]
+            for value in node.values():
+                rewrite(value)
+        elif isinstance(node, list):
+            for value in node:
+                rewrite(value)
+
+    rewrite(result)
+    return result
 
 
 async def generate_structured_output(
@@ -56,6 +80,69 @@ async def generate_structured_output(
         raise ValueError(f"Unknown LLM_PROVIDER: {LLM_PROVIDER!r}")
 
 
+async def generate_chat_response(
+    system_prompt: str,
+    messages: list[dict[str, str]],
+) -> str:
+    """Generate a conversational answer using the configured model provider."""
+    if LLM_PROVIDER == "ollama":
+        client = ollama_sdk.AsyncClient(host=OLLAMA_BASE_URL)
+        response = await client.chat(
+            model=OLLAMA_MODEL,
+            messages=[{"role": "system", "content": system_prompt}, *messages],
+            options={"temperature": 0.2, "num_ctx": 8192},
+        )
+        return response.message.content
+
+    if LLM_PROVIDER == "openai":
+        require_network_allowed("OpenAI chat inference")
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+        response = await client.chat.completions.create(
+            model=OPENAI_MODEL,
+            temperature=0.2,
+            messages=[{"role": "system", "content": system_prompt}, *messages],
+        )
+        return response.choices[0].message.content or ""
+
+    if LLM_PROVIDER == "anthropic":
+        require_network_allowed("Anthropic chat inference")
+        import anthropic
+
+        client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+        response = await client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=2048,
+            system=system_prompt,
+            messages=messages,
+        )
+        return "".join(block.text for block in response.content if getattr(block, "text", None))
+
+    if LLM_PROVIDER == "gemini":
+        require_network_allowed("Gemini chat inference")
+        import httpx
+
+        if not GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY environment variable is not set.")
+        contents = [
+            {"role": "model" if item["role"] == "assistant" else "user", "parts": [{"text": item["content"]}]}
+            for item in messages
+        ]
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, json={
+                "systemInstruction": {"parts": [{"text": system_prompt}]},
+                "contents": contents,
+                "generationConfig": {"temperature": 0.2},
+            })
+            response.raise_for_status()
+            data = response.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+
+    raise ValueError(f"Unknown LLM_PROVIDER: {LLM_PROVIDER!r}")
+
+
 async def generate_structured_output_stream(
     system_prompt: str,
     user_message: str,
@@ -69,7 +156,7 @@ async def generate_structured_output_stream(
         client = ollama_sdk.AsyncClient(host=OLLAMA_BASE_URL)
         format_option: Any = "json"
         if output_schema and hasattr(output_schema, "model_json_schema"):
-            format_option = output_schema.model_json_schema()
+            format_option = _llm_output_schema(output_schema)
 
         async for chunk in await client.chat(
             model=OLLAMA_MODEL,
@@ -81,8 +168,8 @@ async def generate_structured_output_stream(
             stream=True,
             options={
                 "temperature": 0.1,
-                "num_predict": 8192,
-                "num_ctx": 16384,
+                "num_predict": 6144,
+                "num_ctx": 32768,
             },
         ):
             if chunk and chunk.message and chunk.message.content:
@@ -109,7 +196,7 @@ async def _call_ollama(
 
     format_option: Any = "json"
     if schema and hasattr(schema, "model_json_schema"):
-        format_option = schema.model_json_schema()
+        format_option = _llm_output_schema(schema)
 
     response = await client.chat(
         model=OLLAMA_MODEL,
@@ -120,8 +207,11 @@ async def _call_ollama(
         format=format_option,
         options={
             "temperature": 0.1,
-            "num_predict": 8192,  # Expanded schema needs ~6-8k tokens
-            "num_ctx": 16384,     # Ensure context window fits prompt + output
+            # The monograph schema is large. Give the model enough room for
+            # the retrieved evidence and a complete JSON response instead of
+            # silently truncating the tail fields.
+            "num_predict": 6144,
+            "num_ctx": 32768,
         },
     )
 

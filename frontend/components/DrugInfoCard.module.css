@@ -14,7 +14,10 @@
   justify-content: space-between;
   gap: 16px;
   padding: 24px 28px 20px;
-  background: linear-gradient(135deg, rgba(0, 212, 170, 0.06) 0%, transparent 60%);
+  background:
+    linear-gradient(110deg, rgba(91, 203, 255, 0.14), transparent 44%),
+    linear-gradient(250deg, rgba(255, 132, 132, 0.1), transparent 36%),
+    #ffffff;
   border-bottom: 1px solid var(--border-subtle);
   flex-wrap: wrap;
 }
@@ -32,7 +35,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent-primary-dim);
+  background: linear-gradient(145deg, rgba(91, 203, 255, 0.24), rgba(255, 132, 132, 0.16));
   border: 1px solid var(--border-accent);
   border-radius: var(--radius-md);
   flex-shrink: 0;
@@ -83,7 +86,7 @@
   font-size: 0.75rem;
   color: var(--accent-primary);
   background: var(--accent-primary-dim);
-  border: 1px solid rgba(0, 212, 170, 0.15);
+  border: 1px solid rgba(37, 184, 253, 0.22);
   border-radius: 6px;
   padding: 4px 10px;
   max-width: 260px;
@@ -97,10 +100,10 @@
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  background: rgba(0, 212, 170, 0.1);
-  border: 1px solid rgba(0, 212, 170, 0.25);
+  background: rgba(37, 184, 253, 0.1);
+  border: 1px solid rgba(37, 184, 253, 0.28);
   border-radius: var(--radius-sm, 6px);
-  color: var(--accent-primary, #00d4aa);
+  color: #087ca9;
   font-size: 0.75rem;
   font-weight: 500;
   cursor: pointer;
@@ -108,8 +111,8 @@
 }
 
 .exportBtn:hover {
-  background: rgba(0, 212, 170, 0.2);
-  border-color: rgba(0, 212, 170, 0.5);
+  background: rgba(37, 184, 253, 0.18);
+  border-color: rgba(37, 184, 253, 0.5);
 }
 
 /* ── Tabs ── */

@@ -1,0 +1,14 @@
+.git
+.env
+backend/.env
+.venv
+**/.venv
+**/node_modules
+**/.next
+**/__pycache__
+**/.pytest_cache
+**/.cache
+backend/data/chroma
+backend/local-server*.log
+frontend/local-server*.log
+*.log

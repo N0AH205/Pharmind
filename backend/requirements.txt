@@ -7,9 +7,13 @@ python-dotenv>=1.0.1
 
 # Vector DB (Phase 2)
 chromadb>=0.5.3
+fastembed>=0.3.6
+rdkit>=2023.9.5
+flashrank>=0.2.10
+pypdf>=4.2.0
+python-multipart>=0.0.9
 
-# Embeddings — local via Ollama (no API key needed)
-# Pull the model: ollama pull nomic-embed-text
+# Embeddings — local ONNX model via FastEmbed (no API key needed)
 ollama>=0.2.1
 
 # LLM clients (Phase 3 — Ollama default, optional cloud providers)

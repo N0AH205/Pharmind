@@ -17,16 +17,24 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import json
 import asyncio
-import httpx
 from datetime import datetime
 from pydantic import BaseModel, Field
 
 # Ensure backend directory is in python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from rag.pipeline import run_pipeline
+from rag.pipeline import run_pipeline, retrieve_field_evidence
 from rag.schema import DrugInfo
-from rag.llm import GEMINI_API_KEY, GEMINI_MODEL
+from rag.llm import LLM_PROVIDER, OLLAMA_MODEL, OPENAI_MODEL, ANTHROPIC_MODEL, GEMINI_MODEL, generate_structured_output
+from rag.retriever import get_retriever
+from ingest.local_chem import enrich_structure_local
+
+MODEL_NAME = {
+    "ollama": OLLAMA_MODEL,
+    "openai": OPENAI_MODEL,
+    "anthropic": ANTHROPIC_MODEL,
+    "gemini": GEMINI_MODEL,
+}.get(LLM_PROVIDER, "unknown")
 
 # Console formatting
 BOLD = "\033[1m"
@@ -51,11 +59,11 @@ REPORT_OUT_PATH = os.path.join(
 
 # Pydantic model for LLM-assisted evaluation schema
 class EvalMetrics(BaseModel):
-    correctness_score: int = Field(
+    correctness_score: int | None = Field(
         ...,
         description="Factual correctness and detail recall score (0 to 100) compared to the gold standard.",
     )
-    hallucination_score: int = Field(
+    hallucination_score: int | None = Field(
         ...,
         description="Score indicating presence of unsupported or fabricated facts (0 to 100, where 0 is perfect and 100 means highly hallucinated/fabricated).",
     )
@@ -68,13 +76,7 @@ class EvalMetrics(BaseModel):
 async def call_llm_evaluator(
     drug_name: str, field_name: str, generated_text: str, gold_standard_text: str
 ) -> EvalMetrics:
-    """Call Google Gemini to compare generated text against gold standard facts with backoff retry."""
-    if not GEMINI_API_KEY:
-        return EvalMetrics(
-            correctness_score=0,
-            hallucination_score=0,
-            rationale="GEMINI_API_KEY env variable not set. LLM eval skipped.",
-        )
+    """Audit a generated field with the configured provider."""
 
     system_prompt = (
         "You are an expert pharmaceutical research auditor. Your task is to evaluate RAG-generated drug summaries "
@@ -101,48 +103,44 @@ Evaluation Rules:
 3. Rationale: Briefly explain your scores.
 """
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    payload = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": user_message}]
-            }
-        ],
-        "systemInstruction": {
-            "parts": [{"text": system_prompt}]
-        },
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "temperature": 0.1,
-        }
-    }
+    try:
+        raw = await generate_structured_output(system_prompt, user_message, EvalMetrics)
+        return EvalMetrics(**raw)
+    except Exception as exc:
+        return EvalMetrics(correctness_score=None, hallucination_score=None, rationale=f"Configured model evaluator failed: {exc}")
 
-    max_retries = 5
-    delay = 3.0
-    for i in range(max_retries):
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(url, json=payload)
-                if resp.status_code == 429:
-                    raise httpx.HTTPStatusError("429 Too Many Requests", request=resp.request, response=resp)
-                resp.raise_for_status()
-                data = resp.json()
-                raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                parsed = json.loads(raw_text)
-                await asyncio.sleep(1.0)
-                return EvalMetrics(**parsed)
-        except Exception as exc:
-            if i < max_retries - 1:
-                print(f"  {YELLOW}Rate limit or API error during {field_name} eval. Retrying in {delay:.1f}s...{RESET}")
-                await asyncio.sleep(delay)
-                delay *= 2
-            else:
-                return EvalMetrics(
-                    correctness_score=0,
-                    hallucination_score=0,
-                    rationale=f"LLM Evaluator failed after {max_retries} attempts. Error: {exc}",
-                )
+
+def _field_values(value, prefix=""):
+    """Yield every FieldValue-shaped object from a serialized DrugInfo."""
+    if isinstance(value, dict):
+        if {"content", "missing", "sources"}.issubset(value):
+            yield prefix, value
+            return
+        for key, child in value.items():
+            yield from _field_values(child, f"{prefix}.{key}" if prefix else key)
+
+
+def _retrieval_recall(gold_data: dict, chunks: list[dict]) -> dict:
+    """Keyword recall proxy against retrieved passages; not semantic relevance."""
+    terms = []
+
+    def collect(value):
+        if isinstance(value, list):
+            terms.extend(str(item) for item in value)
+        elif isinstance(value, dict):
+            for child in value.values():
+                collect(child)
+
+    for key, value in gold_data.items():
+        if key not in {"smiles", "generic"}:
+            collect(value)
+    corpus = " ".join(chunk.get("text", "") for chunk in chunks).lower()
+    matched = [term for term in terms if term.lower() in corpus]
+    return {
+        "keyword_recall_proxy": round(100 * len(matched) / len(terms), 1) if terms else 0.0,
+        "matched_terms": matched,
+        "expected_term_count": len(terms),
+    }
 
 
 def evaluate_field(
@@ -210,6 +208,17 @@ async def evaluate_drug(drug_key: str, gold_data: dict, llm_eval_enabled: bool =
                     "overall_score": 0.0,
                 }
     duration_sec = (datetime.now() - start_time).total_seconds()
+
+    # Measure retrieval recall proxy over the same field-balanced evidence strategy.
+    structure_data = await enrich_structure_local(smiles)
+    cid = str(structure_data.get("pubchem_cid") or "") or None
+    retrieved_chunks = await retrieve_field_evidence(
+        structure_data,
+        get_retriever(),
+        cid,
+        str(structure_data.get("common_name") or structure_data.get("iupac_name") or "").strip() or None,
+    )
+    retrieval_metrics = _retrieval_recall(gold_data, retrieved_chunks)
 
     if res is None:
         print(f"  {RED}✗ RAG pipeline query failed: rate limit exceeded after {max_retries} attempts.{RESET}")
@@ -282,7 +291,7 @@ async def evaluate_drug(drug_key: str, gold_data: dict, llm_eval_enabled: bool =
 
         # 2. Citation check
         if not is_missing and gen_text:
-            has_sources = len(sources) > 0 and all(src.source and src.url for src in sources)
+            has_sources = len(sources) > 0 and all(src.source and src.text for src in sources)
             citation_checks.append(100 if has_sources else 0)
         else:
             has_sources = True  # Missing fields don't need citations
@@ -297,8 +306,8 @@ async def evaluate_drug(drug_key: str, gold_data: dict, llm_eval_enabled: bool =
             hallucination = llm_eval.hallucination_score
             rationale = llm_eval.rationale
         else:
-            correctness = 0
-            hallucination = 0
+            correctness = None
+            hallucination = None
             rationale = "LLM evaluation disabled (run with --llm-eval to enable)"
 
         field_eval.update({
@@ -313,28 +322,41 @@ async def evaluate_drug(drug_key: str, gold_data: dict, llm_eval_enabled: bool =
 
     citation_score = (sum(citation_checks) / len(citation_checks)) if citation_checks else 100.0
 
+    serialized = res.model_dump()
+    all_fields = list(_field_values(serialized))
+    populated_fields = [(path, value) for path, value in all_fields if not value.get("missing") and value.get("content")]
+    coverage_score = round(100 * len(populated_fields) / len(all_fields), 1) if all_fields else 0.0
+    citation_evidence_score = round(
+        100 * sum(bool(field.get("sources")) and all(src.get("source") and src.get("text") for src in field["sources"]) for _, field in populated_fields) / len(populated_fields),
+        1,
+    ) if populated_fields else 100.0
+
     # Calculate aggregate metrics
     kw_scores = [f["keyword_score"] for f in evaluated_fields.values()]
     avg_keyword_score = sum(kw_scores) / len(kw_scores) if kw_scores else 0.0
 
-    corr_scores = [f["correctness_score"] for f in evaluated_fields.values()]
-    avg_correctness_score = sum(corr_scores) / len(corr_scores) if corr_scores else 0.0
+    corr_scores = [f["correctness_score"] for f in evaluated_fields.values() if isinstance(f["correctness_score"], int)]
+    avg_correctness_score = sum(corr_scores) / len(corr_scores) if corr_scores else None
 
-    hall_scores = [f["hallucination_score"] for f in evaluated_fields.values()]
-    avg_hallucination_score = sum(hall_scores) / len(hall_scores) if hall_scores else 0.0
+    hall_scores = [f["hallucination_score"] for f in evaluated_fields.values() if isinstance(f["hallucination_score"], int)]
+    avg_hallucination_score = sum(hall_scores) / len(hall_scores) if hall_scores else None
 
     # overall score
-    if llm_eval_enabled:
+    if llm_eval_enabled and avg_correctness_score is not None and avg_hallucination_score is not None:
         hallucination_penalty = avg_hallucination_score
-        overall_score = (schema_compliance + citation_score + avg_correctness_score + (100.0 - hallucination_penalty)) / 4.0
+        overall_score = (schema_compliance + citation_evidence_score + coverage_score + (avg_correctness_score or 0.0) + (100.0 - hallucination_penalty)) / 5.0
     else:
-        overall_score = (schema_compliance + citation_score + avg_keyword_score) / 3.0
+        overall_score = (schema_compliance + citation_evidence_score + coverage_score + avg_keyword_score) / 4.0
 
     print(f"  {GREEN}+ Completed evaluation for {drug_key.upper()}{RESET}")
     print(f"    Keyword Recall: {avg_keyword_score:.1f}%")
-    print(f"    Correctness:    {avg_correctness_score:.1f}%")
-    print(f"    Hallucination:  {avg_hallucination_score:.1f}%")
+    correctness_display = f"{avg_correctness_score:.1f}%" if avg_correctness_score is not None else "not evaluated"
+    hallucination_display = f"{avg_hallucination_score:.1f}%" if avg_hallucination_score is not None else "not evaluated"
+    print(f"    Correctness:    {correctness_display}")
+    print(f"    Hallucination:  {hallucination_display}")
     print(f"    Citation Rate:  {citation_score:.1f}%")
+    print(f"    Field Coverage: {coverage_score:.1f}%")
+    print(f"    Retrieval Recall Proxy: {retrieval_metrics['keyword_recall_proxy']:.1f}%")
 
     return {
         "drug": drug_key,
@@ -342,9 +364,14 @@ async def evaluate_drug(drug_key: str, gold_data: dict, llm_eval_enabled: bool =
         "duration_sec": round(duration_sec, 2),
         "schema_compliance": schema_compliance,
         "citation_score": round(citation_score, 1),
+        "citation_evidence_score": citation_evidence_score,
+        "field_coverage_score": coverage_score,
+        "field_count": len(all_fields),
+        "populated_field_count": len(populated_fields),
+        "retrieval_recall": retrieval_metrics,
         "avg_keyword_score": round(avg_keyword_score, 1),
-        "avg_correctness_score": round(avg_correctness_score, 1),
-        "avg_hallucination_score": round(avg_hallucination_score, 1),
+        "avg_correctness_score": round(avg_correctness_score, 1) if avg_correctness_score is not None else None,
+        "avg_hallucination_score": round(avg_hallucination_score, 1) if avg_hallucination_score is not None else None,
         "overall_score": round(overall_score, 1),
         "fields": evaluated_fields,
     }
@@ -375,48 +402,62 @@ async def main():
         res = await evaluate_drug(drug_key, gold_data, llm_eval_enabled=args.llm_eval)
         results.append(res)
         print()
-        await asyncio.sleep(20.0)
-        print()
 
     # 2. Print table report
-    print("\n" + "=" * 76)
-    print(f"{BOLD}{'Drug':<15} {'Recall %':<10} {'Correct %':<10} {'Halluc %':<10} {'Citations %':<12} {'Overall %':<10}{RESET}")
-    print("-" * 76)
+    print("\n" + "=" * 92)
+    print(f"{BOLD}{'Drug':<15} {'Retrieval %':<12} {'Coverage %':<12} {'Citations %':<12} {'Correct %':<10} {'Halluc %':<10} {'Overall %':<10}{RESET}")
+    print("-" * 92)
 
     success_results = [r for r in results if r["success"]]
     for r in results:
         if r["success"]:
             drug_name = r["drug"].upper()
-            kw = f"{r['avg_keyword_score']:.1f}%"
-            corr = f"{r['avg_correctness_score']:.1f}%"
-            hall = f"{r['avg_hallucination_score']:.1f}%"
-            cit = f"{r['citation_score']:.1f}%"
+            ret = f"{r['retrieval_recall']['keyword_recall_proxy']:.1f}%"
+            cov = f"{r['field_coverage_score']:.1f}%"
+            cit = f"{r['citation_evidence_score']:.1f}%"
+            corr_value = r["avg_correctness_score"]
+            corr = f"{corr_value:.1f}%" if corr_value is not None else "N/A"
+            hall_value = r["avg_hallucination_score"]
+            hall = f"{hall_value:.1f}%" if hall_value is not None else "N/A"
             ovr = f"{r['overall_score']:.1f}%"
-            print(f"{drug_name:<15} {kw:<10} {corr:<10} {hall:<10} {cit:<12} {ovr:<10}")
+            print(f"{drug_name:<15} {ret:<12} {cov:<12} {cit:<12} {corr:<10} {hall:<10} {ovr:<10}")
         else:
-            print(f"{r['drug'].upper():<15} {RED}{'FAILED':<59}{RESET}")
+            print(f"{r['drug'].upper():<15} {RED}{'FAILED':<77}{RESET}")
 
-    print("-" * 76)
+    print("-" * 92)
 
+    avg_corr = None
+    avg_hall = None
     if success_results:
         avg_kw = sum(r["avg_keyword_score"] for r in success_results) / len(success_results)
-        avg_corr = sum(r["avg_correctness_score"] for r in success_results) / len(success_results)
-        avg_hall = sum(r["avg_hallucination_score"] for r in success_results) / len(success_results)
+        scored_corr = [r["avg_correctness_score"] for r in success_results if r["avg_correctness_score"] is not None]
+        avg_corr = sum(scored_corr) / len(scored_corr) if scored_corr else None
+        scored_hall = [r["avg_hallucination_score"] for r in success_results if r["avg_hallucination_score"] is not None]
+        avg_hall = sum(scored_hall) / len(scored_hall) if scored_hall else None
         avg_cit = sum(r["citation_score"] for r in success_results) / len(success_results)
         avg_ovr = sum(r["overall_score"] for r in success_results) / len(success_results)
-        print(f"{BOLD}{'AVERAGE':<15} {avg_kw:.1f}%      {avg_corr:.1f}%      {avg_hall:.1f}%      {avg_cit:.1f}%        {avg_ovr:.1f}%{RESET}")
-    print("=" * 76)
+        avg_coverage = sum(r["field_coverage_score"] for r in success_results) / len(success_results)
+        avg_retrieval_recall = sum(r["retrieval_recall"]["keyword_recall_proxy"] for r in success_results) / len(success_results)
+        avg_citation_evidence = sum(r["citation_evidence_score"] for r in success_results) / len(success_results)
+        avg_corr_display = f"{avg_corr:.1f}%" if avg_corr is not None else "N/A"
+        avg_hall_display = f"{avg_hall:.1f}%" if avg_hall is not None else "N/A"
+        print(f"{BOLD}{'AVERAGE':<15} {avg_retrieval_recall:.1f}%        {avg_coverage:.1f}%        {avg_citation_evidence:.1f}%        {avg_corr_display:<10} {avg_hall_display:<10} {avg_ovr:.1f}%{RESET}")
+    print("=" * 92)
 
     # 3. Save report output
     report_data = {
         "timestamp": datetime.utcnow().isoformat(),
-        "model_evaluated": GEMINI_MODEL,
+        "model_provider": LLM_PROVIDER,
+        "model_evaluated": MODEL_NAME,
         "metrics_average": {
             "avg_keyword_score": round(avg_kw, 1) if success_results else 0,
-            "avg_correctness_score": round(avg_corr, 1) if success_results else 0,
-            "avg_hallucination_score": round(avg_hall, 1) if success_results else 0,
+            "avg_correctness_score": round(avg_corr, 1) if avg_corr is not None else None,
+            "avg_hallucination_score": round(avg_hall, 1) if avg_hall is not None else None,
             "avg_citation_score": round(avg_cit, 1) if success_results else 0,
             "avg_overall_score": round(avg_ovr, 1) if success_results else 0,
+            "avg_field_coverage_score": round(avg_coverage, 1) if success_results else 0,
+            "avg_citation_evidence_score": round(avg_citation_evidence, 1) if success_results else 0,
+            "avg_retrieval_recall_keyword_proxy": round(avg_retrieval_recall, 1) if success_results else 0,
         },
         "drugs_detail": results,
     }

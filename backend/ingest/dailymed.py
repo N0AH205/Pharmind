@@ -14,6 +14,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 
 import httpx
+from rag.config import require_network_allowed
 
 BASE_URL = "https://dailymed.nlm.nih.gov/dailymed/services/v2"
 
@@ -23,8 +24,16 @@ _NS = "urn:hl7-org:v3"
 # LOINC section codes → our internal field keys
 # These are the standard codes used in FDA SPL documents.
 _LOINC_MAP: dict[str, str] = {
+    "34068-7": "dosage_and_administration",
     "34067-9": "indications",           # INDICATIONS AND USAGE SECTION
     "34070-3": "contraindications",     # CONTRAINDICATIONS SECTION
+    "34071-1": "warnings",
+    "34072-9": "precautions",
+    "34074-5": "use_in_specific_populations",
+    "34076-0": "overdosage",
+    "34077-8": "description",
+    "34080-2": "clinical_studies",
+    "34083-6": "how_supplied",
     "34084-4": "adverse_effects",       # ADVERSE REACTIONS SECTION
     "34073-7": "drug_interactions",     # DRUG INTERACTIONS SECTION
     "34089-3": "clinical_pharmacology", # CLINICAL PHARMACOLOGY SECTION
@@ -36,8 +45,17 @@ _LOINC_MAP: dict[str, str] = {
 
 # Keyword fallback for displayName matching when code not in map
 _KEYWORD_MAP: dict[str, str] = {
+    "dosage and administration": "dosage_and_administration",
     "indication": "indications",
     "contraindication": "contraindications",
+    "warnings and precautions": "warnings",
+    "warnings": "warnings",
+    "precautions": "precautions",
+    "use in specific populations": "use_in_specific_populations",
+    "overdosage": "overdosage",
+    "clinical studies": "clinical_studies",
+    "nonclinical toxicology": "nonclinical_toxicology",
+    "description": "description",
     "adverse reaction": "adverse_effects",
     "adverse effect": "adverse_effects",
     "side effect": "adverse_effects",
@@ -109,6 +127,7 @@ def _parse_spl_xml(xml_text: str) -> dict[str, str]:
 
 
 async def search_drug_labels(drug_name: str, pagesize: int = 20) -> list[dict]:
+    require_network_allowed("DailyMed label search")
     """
     Search DailyMed for SPL labels matching a drug name.
     Returns up to `pagesize` label metadata records (each has a 'setid').
@@ -124,6 +143,7 @@ async def search_drug_labels(drug_name: str, pagesize: int = 20) -> list[dict]:
 
 
 async def get_label_sections(set_id: str) -> dict[str, str]:
+    require_network_allowed("DailyMed label download")
     """
     Fetch and parse a full SPL label by set_id.
 

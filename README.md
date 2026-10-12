@@ -1,100 +1,119 @@
-# Pharmer / Local AI Pharmacology Workbench
+# Pharmind — AI Drug Research & Pharmacology Intelligence Platform
 
-Pharmer is an open-source, 100% local AI assistant built for medicinal chemists, pharmacology students, and researchers. It allows you to search chemical compounds using SMILES strings, common drug names, or PubChem CIDs, and get back structured pharmacological monographs grounded in verified medical literature.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black)](https://nextjs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com/)
+[![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Store-orange)](https://www.trychroma.com/)
 
----
+**Pharmind** is an open-source pharmacology research platform and AI copilot designed for students, researchers, and healthcare professionals. 
 
-## Key Features
+It searches biomedical databases, visualizes 2D and 3D molecular structures, indexes research literature (PDFs), and generates comprehensive, citation-backed drug monographs spanning Pharmacodynamics, ADME, Toxicology, and Clinical Profiles.
 
-- **Grounded Drug Monographs**: Generates structured reports covering Mechanism of Action, ADME (Absorption, Distribution, Metabolism, Excretion), Toxicology, Indications, and History.
-- **Interactive Citation Viewer**: Every statement includes citation badges. Clicking a citation opens a modal showing the exact passage retrieved from local database sources.
-- **100% Offline Chemical Intelligence**: Uses local RDKit to render 2D molecular structures, compute formulas, and calculate molecular weights. Includes an interactive visual molecule drawer.
-- **Local Reranking**: Integrates a local cross-encoder model (`FlashRank`) to re-order retrieved medical passages by semantic relevance before generating answers.
-- **PDF Literature Ingestion**: Drag and drop custom lab notes or journal PDFs in the sidebar to index them into your local search database.
-- **Side-by-Side Candidate Comparison**: Compare Mechanism of Action, ADME, and Safety profiles between two compounds side by side.
-- **Markdown Export**: Download formatted `.md` monographs for lab notes or publication prep.
-- **Conversational Follow-Up Q&A**: Ask follow-up questions in natural language grounded in your local literature index.
+> [!NOTE]
+> **Research and Educational Use Only**: Pharmind is designed as a pharmacology research aid and learning tool. It does **not** provide medical advice, diagnosis, or treatment plans. Always consult licensed clinicians for patient care.
 
 ---
 
-## Project Layout
+## Features at a Glance
 
-```
-pharma-rag/
-├── frontend/         # Next.js user interface (React & TypeScript)
-├── backend/          # FastAPI server (Python RAG pipeline)
-├── data/             # Local ChromaDB vector database
-├── docker-compose.yml# Docker single-command setup
-├── Dockerfile        # Single container setup
-└── README.md
-```
-
----
-
-## Quick Start
-
-### Option A: One-Command Docker Setup (Recommended)
-
-Run the entire application (frontend + backend) with Docker:
-
-```bash
-docker compose up --build
-```
-
-Then open [http://localhost:3000](http://localhost:3000) in your browser.
+* **Discovery Portal (`/`)**: A clean, modern homepage with real-time drug search, quick query suggestions (*Paracetamol, Aspirin, Ibuprofen, Caffeine*), and platform navigation.
+* **Interactive Research Workspace (`/chat`)**: A research environment featuring multi-turn conversational reasoning, follow-up queries, and structured data views.
+* **Molecular Structure Visualizer**: Automatic chemical resolution via PubChem with interactive 2D structure diagrams, 3D molecular rendering, IUPAC nomenclature, SMILES, InChI, and PubChem CIDs.
+* **Comprehensive Pharmacology Monographs**:
+  * **Pharmacodynamics**: Mechanism of action, physiologic effects, binding affinity ($K_d$ / $K_i$), and selectivity.
+  * **Pharmacokinetics (ADME)**: Absorption, distribution, metabolism (CYP450 enzymes), and excretion half-lives.
+  * **Toxicology**: Acute toxicity, cytotoxicity, genetic risks, and hazard classifications.
+  * **Therapeutic Profile**: Indications, contraindications, adverse reactions, and drug interactions.
+* **Grounded & Cited Evidence**: Every claim links directly to primary sources across PubMed abstracts, DailyMed SPL labels, ClinicalTrials.gov records, and PubChem.
+* **Chat with PDF**: Upload and index your own scientific papers, clinical trials, or monographs directly into your local vector database with one click.
+* **Persistent Recent Chats**: Research history is automatically preserved locally in your browser (`localStorage`). Seamlessly switch between past investigations, auto-title threads, and delete sessions without requiring an account.
 
 ---
 
-### Option B: Manual Local Setup
+## Setup Guide
+---
 
-#### 1. Backend Setup
+### Option 1: Windows 1-Click Launch (Easiest)
 
-```bash
-cd backend
-python -m venv .venv
+#### Step 1: Install Docker Desktop
+1. Download and install **[Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)**.
+2. Open Docker Desktop from your Start menu and wait until the bottom-left icon turns **green** (indicating Docker is running).
 
-# On Windows:
-.venv\Scripts\activate
+#### Step 2: Configure Your AI Brain
+Pharmind needs an AI language model to generate answers. You can choose either a **Free Google Gemini API key** or run **100% locally with Ollama**:
 
-# Install dependencies
-pip install -r requirements.txt
+* **Recommended (Easiest & Free)**:
+  1. Open the `backend` folder.
+  2. Copy `backend/.env.example` and rename the copy to `backend/.env`.
+  3. Get a free API key at **[Google AI Studio](https://aistudio.google.com/app/apikey)**.
+  4. Open `backend/.env` in Notepad and set:
+     ```env
+     LLM_PROVIDER=gemini
+     GEMINI_API_KEY=your_copied_api_key_here
+     ```
+* **Alternative (100% Offline / Local)**:
+  1. Download and install **[Ollama](https://ollama.com/download)**.
+  2. Open Command Prompt or PowerShell and run:
+     ```powershell
+     ollama pull qwen2.5:7b
+     ```
+  3. In `backend/.env`, set `LLM_PROVIDER=ollama`.
 
-# Start the server
-uvicorn main:app --reload --port 8000
-```
+#### Step 3: Start Pharmind
+Double-click **`start-pharmer.bat`** in the project folder.
 
-#### 2. Frontend Setup
+That's it! The launcher will start all services, prepare the local embedding models, and open your browser at **[http://localhost:3000](http://localhost:3000)**.
 
-In a separate terminal:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+#### How to Stop:
+When you are done researching, double-click **`stop-pharmer.bat`** to safely shut down the containers. Your data and history remain saved.
 
 ---
 
-## How Retrieval & Safety Work
+## How to Use Pharmind
 
-1. **Drug Identity Filtering**: When you query a compound (e.g. Aspirin / CID 2244), retrieval is filtered to chunks tagged with that PubChem CID. This prevents mixing information from different drugs.
-2. **Local Embeddings & Reranking**: Text snippets are embedded locally using FastEmbed and reranked using FlashRank.
-3. **Structured Verification**: The local LLM generates responses mapped strictly to a Pydantic schema. Missing fields are explicitly marked as "Data unavailable" rather than guessed.
-4. **Safety Refusal**: Queries requesting direct patient-specific clinical advice or dosages are automatically flagged and refused.
+1. **Search a Drug**:
+   * Type common drug names (e.g., *Metformin, Aspirin, Ibuprofen, Atorvastatin*) or paste a SMILES chemical formula into the search bar.
+   * Press **Enter** or click **Search**.
+2. **Review the Profile**:
+   * Inspect the mechanism of action, CYP metabolic enzymes, clearance rates, and contraindications.
+   * View the 2D chemical structure or rotate the interactive 3D model.
+3. **Ask Follow-Up Questions**:
+   * Type conversational questions in the bottom chat bar (e.g., *"Can this be taken with alcohol?"* or *"What are common off-target bindings?"*).
+4. **Compare Compounds**:
+   * Click the **Compare** button on any profile to view side-by-side pharmacological comparisons between multiple drugs.
+5. **Manage Your Sessions**:
+   * All queries appear in the **Recent Chats** sidebar.
+   * Click any previous chat to restore its full conversation history and drug monograph.
+   * Hover over any session and click **✕** to delete it.
+   * Click **+ New Chat** anytime to start a fresh exploration.
 
 ---
 
-## Data Sources
+## ❓ Frequently Asked Questions (FAQ)
 
-- **PubChem**: Chemical structure, molecular properties, and baseline pharmacology.
-- **DailyMed (FDA)**: Package insert sections (indications, warnings, ADME).
-- **PubMed**: Research abstracts for targeted pharmacology questions.
-- **Custom PDFs**: User-uploaded literature files.
+<details>
+<summary><b>1. Docker says "Docker is not running" or fails to start. What do I do?</b></summary>
+Open the Docker Desktop application from your Windows/Mac application menu and wait 15–30 seconds until the status light in the bottom corner shows solid green. Once Docker Desktop is running, try running the start script again.
+</details>
+
+<details>
+<summary><b>2. How much disk space does Pharmind take?</b></summary>
+The initial Docker images take roughly 2–3 GB. If you use Ollama with `qwen2.5:7b`, it requires an additional ~4.5 GB for the model weights. If disk space is limited, using the Gemini free API key requires virtually no disk space.
+</details>
+
+<details>
+<summary><b>3. Where are my saved chats stored? Can other people see them?</b></summary>
+Your saved chats and research queries are stored strictly in your browser's local storage (`localStorage`). They never leave your computer and cannot be viewed by other users.
+</details>
+
+<details>
+<summary><b>4. Can I upload my own PDF research papers?</b></summary>
+Yes! In the research workspace (`/chat`), click **Chat with PDF** in the sidebar. Select your paper, associate it with a drug name, and Pharmind will extract, chunk, and index the text into your local ChromaDB store.
+</details>
 
 ---
 
-## Disclaimer
+## License & Attribution
 
-Pharmer is built for **educational, academic, and scientific research purposes only**. It does not provide medical or clinical advice.
+* **Software License**: [MIT License](LICENSE).
+* **Data Sources**: Pharmacological and chemical data is sourced from PubChem (NCBI), DailyMed (NLM), PubMed (NCBI), and ClinicalTrials.gov subject to their respective terms of use.
