@@ -47,29 +47,79 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
-if ($provider -eq "ollama") {
-    if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
-        Stop-WithHelp "LLM_PROVIDER=ollama, but Ollama is unavailable. Install Ollama or select a configured cloud provider in backend/.env."
-    }
-    $model = if ($env:OLLAMA_MODEL) { $env:OLLAMA_MODEL } else { "qwen2.5:3b" }
-    $env:OLLAMA_MODEL = $model
-    $ollamaReady = $false
-    try { Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/tags" -TimeoutSec 2 | Out-Null; $ollamaReady = $true } catch {}
-    if (-not $ollamaReady) {
-        Write-Host "Starting the local Ollama service..."
-        Start-Process -FilePath (Get-Command ollama).Source -ArgumentList "serve" -WindowStyle Hidden
-        for ($i = 0; $i -lt 30; $i++) {
-            Start-Sleep -Seconds 2
-            try { Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/tags" -TimeoutSec 2 | Out-Null; $ollamaReady = $true; break } catch {}
+if ($provider -eq "gemini") {
+    $hasKey = $false
+    if (Test-Path $backendEnv) {
+        $keyLine = Select-String -Path $backendEnv -Pattern '^\s*GEMINI_API_KEY\s*=\s*(.+?)\s*$' | Select-Object -Last 1
+        if ($keyLine -and $keyLine.Matches[0].Groups[1].Value.Trim() -ne "" -and -not $keyLine.Matches[0].Groups[1].Value.StartsWith("AIzaSy...")) {
+            $hasKey = $true
         }
     }
-    if (-not $ollamaReady) { Stop-WithHelp "Ollama did not start. Open Ollama from the Start menu and try again." }
+    if (-not $hasKey) {
+        Write-Host "`n=== Google Gemini Setup ===" -ForegroundColor Cyan
+        Write-Host "You need a free Google Gemini API key to run Pharmind."
+        Write-Host "Get one for free at: https://aistudio.google.com/app/apikey`n" -ForegroundColor Yellow
+        $keyInput = Read-Host "Paste your Google Gemini API key"
+        if ($keyInput -and $keyInput.Trim() -ne "") {
+            $keyInput = $keyInput.Trim()
+            $envContent = if (Test-Path $backendEnv) { Get-Content $backendEnv -Raw } else { "" }
+            if ($envContent -match "GEMINI_API_KEY=") {
+                $envContent = $envContent -replace "GEMINI_API_KEY=.*", "GEMINI_API_KEY=$keyInput"
+            } else {
+                $envContent += "`nGEMINI_API_KEY=$keyInput"
+            }
+            Set-Content -Path $backendEnv -Value $envContent -NoNewline
+            Write-Host "Gemini API key saved to backend\.env" -ForegroundColor Green
+        } else {
+            Stop-WithHelp "No API key was provided. Get a free key at https://aistudio.google.com/app/apikey and run start-pharmer.bat again."
+        }
+    }
+} elseif ($provider -eq "ollama") {
+    if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
+        Write-Host "`nOllama is not installed on this computer." -ForegroundColor Yellow
+        Write-Host "You can use Google Gemini instead (free, fast, no heavy downloads needed)." -ForegroundColor Cyan
+        Write-Host "Get your free API key at: https://aistudio.google.com/app/apikey`n" -ForegroundColor Yellow
+        $keyInput = Read-Host "Paste your Google Gemini API key (or press Enter to cancel)"
+        if ($keyInput -and $keyInput.Trim() -ne "") {
+            $keyInput = $keyInput.Trim()
+            $envContent = if (Test-Path $backendEnv) { Get-Content $backendEnv -Raw } else { "" }
+            if ($envContent -match "LLM_PROVIDER=") {
+                $envContent = $envContent -replace "LLM_PROVIDER=.*", "LLM_PROVIDER=gemini"
+            } else {
+                $envContent += "`nLLM_PROVIDER=gemini"
+            }
+            if ($envContent -match "GEMINI_API_KEY=") {
+                $envContent = $envContent -replace "GEMINI_API_KEY=.*", "GEMINI_API_KEY=$keyInput"
+            } else {
+                $envContent += "`nGEMINI_API_KEY=$keyInput"
+            }
+            Set-Content -Path $backendEnv -Value $envContent -NoNewline
+            $provider = "gemini"
+            Write-Host "Configured LLM_PROVIDER=gemini and saved your API key to backend\.env!" -ForegroundColor Green
+        } else {
+            Stop-WithHelp "To run Pharmind, either install Ollama (https://ollama.com) or enter a Google Gemini API key."
+        }
+    } else {
+        $model = if ($env:OLLAMA_MODEL) { $env:OLLAMA_MODEL } else { "qwen2.5:3b" }
+        $env:OLLAMA_MODEL = $model
+        $ollamaReady = $false
+        try { Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/tags" -TimeoutSec 2 | Out-Null; $ollamaReady = $true } catch {}
+        if (-not $ollamaReady) {
+            Write-Host "Starting the local Ollama service..."
+            Start-Process -FilePath (Get-Command ollama).Source -ArgumentList "serve" -WindowStyle Hidden
+            for ($i = 0; $i -lt 30; $i++) {
+                Start-Sleep -Seconds 2
+                try { Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/tags" -TimeoutSec 2 | Out-Null; $ollamaReady = $true; break } catch {}
+            }
+        }
+        if (-not $ollamaReady) { Stop-WithHelp "Ollama did not start. Open Ollama from the Start menu and try again." }
 
-    $installedModels = ollama list 2>$null | Out-String
-    if ($installedModels -notmatch [regex]::Escape($model)) {
-        Write-Host "Downloading the local chat model $model (one time)..." -ForegroundColor Yellow
-        ollama pull $model
-        if ($LASTEXITCODE -ne 0) { Stop-WithHelp "Model download failed. Check your internet connection and available disk space, then try again." }
+        $installedModels = ollama list 2>$null | Out-String
+        if ($installedModels -notmatch [regex]::Escape($model)) {
+            Write-Host "Downloading the local chat model $model (one time)..." -ForegroundColor Yellow
+            ollama pull $model
+            if ($LASTEXITCODE -ne 0) { Stop-WithHelp "Model download failed. Check your internet connection and available disk space, then try again." }
+        }
     }
 }
 

@@ -30,42 +30,42 @@ It searches biomedical databases, visualizes 2D and 3D molecular structures, ind
 
 ---
 
-## Setup Guide
+## 🚀 Easy Setup Guide (For Everyone)
+
+You do **not** need to have Git or Ollama installed to run Pharmind.
+
+### 📥 Step 1: Download the Files (No Git Needed)
+1. Visit **[https://github.com/N0AH205/Pharmer](https://github.com/N0AH205/Pharmer)** in your browser.
+2. Click the green **`<> Code`** button at the top right, then click **Download ZIP**.
+3. Right-click the downloaded `.zip` file on your computer and choose **Extract All...**.
+
 ---
 
-### Option 1: Windows 1-Click Launch (Easiest)
-
-#### Step 1: Install Docker Desktop
+### 🐳 Step 2: Install Docker Desktop (One-time)
 1. Download and install **[Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)**.
-2. Open Docker Desktop from your Start menu and wait until the bottom-left icon turns **green** (indicating Docker is running).
+2. Open Docker Desktop from your Start menu and wait 15–30 seconds until the status icon in the bottom-left turns **green** (indicating Docker is running).
 
-#### Step 2: Configure Your AI Brain
-Pharmind needs an AI language model to generate answers. You can choose either a **Free Google Gemini API key** or run **100% locally with Ollama**:
+---
 
-* **Recommended (Easiest & Free)**:
-  1. Open the `backend` folder.
-  2. Copy `backend/.env.example` and rename the copy to `backend/.env`.
-  3. Get a free API key at **[Google AI Studio](https://aistudio.google.com/app/apikey)**.
-  4. Open `backend/.env` in Notepad and set:
-     ```env
-     LLM_PROVIDER=gemini
-     GEMINI_API_KEY=your_copied_api_key_here
-     ```
-* **Alternative (100% Offline / Local)**:
-  1. Download and install **[Ollama](https://ollama.com/download)**.
-  2. Open Command Prompt or PowerShell and run:
-     ```powershell
-     ollama pull qwen2.5:7b
-     ```
-  3. In `backend/.env`, set `LLM_PROVIDER=ollama`.
+### 🔑 Step 3: Get Your Free Google Gemini API Key (30 Seconds)
+Pharmind uses Google Gemini to generate answers quickly with zero GPU hardware requirements:
+1. Visit **[Google AI Studio API Keys](https://aistudio.google.com/app/apikey)** (log in with any standard Google account).
+2. Click **Create API Key** and copy it to your clipboard.
 
-#### Step 3: Start Pharmind
-Double-click **`start-pharmer.bat`** in the project folder.
+---
 
-That's it! The launcher will start all services, prepare the local embedding models, and open your browser at **[http://localhost:3000](http://localhost:3000)**.
+### ▶️ Step 4: Double-Click `start-pharmer.bat`!
+1. Open the extracted folder and double-click **`start-pharmer.bat`**.
+2. If you haven't configured a key yet, the launcher will prompt:
+   ```text
+   Paste your Google Gemini API key:
+   ```
+   Simply right-click or paste your key and press **Enter**.
+3. The launcher will automatically build and start the containers, and launch your browser at:
+   👉 **[http://localhost:3000](http://localhost:3000)**
 
 #### How to Stop:
-When you are done researching, double-click **`stop-pharmer.bat`** to safely shut down the containers. Your data and history remain saved.
+When you are done researching, simply double-click **`stop-pharmer.bat`** to stop the application. Your research history and settings stay saved.
 
 ---
 
