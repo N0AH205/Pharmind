@@ -14,6 +14,13 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Stop-WithHelp "Docker was not found. Install Docker Desktop from https://www.docker.com/products/docker-desktop/ and start it, then double-click start-pharmer.bat again."
 }
 $backendEnv = Join-Path $root "backend\.env"
+if (-not (Test-Path $backendEnv)) {
+    $exampleEnv = Join-Path $root "backend\.env.example"
+    if (Test-Path $exampleEnv) {
+        Copy-Item $exampleEnv $backendEnv
+        Write-Host "Created backend\.env from backend\.env.example" -ForegroundColor Green
+    }
+}
 $provider = "ollama"
 if (Test-Path $backendEnv) {
     $providerLine = Select-String -Path $backendEnv -Pattern '^\s*LLM_PROVIDER\s*=\s*(.+?)\s*$' | Select-Object -Last 1
