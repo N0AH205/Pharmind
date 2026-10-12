@@ -125,15 +125,30 @@ async def generate_chat_response(
 
         if not GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY environment variable is not set.")
-        contents = [
-            {"role": "model" if item["role"] == "assistant" else "user", "parts": [{"text": item["content"]}]}
-            for item in messages
-        ]
+
+        # Ensure alternating user/model turns for the Gemini REST API
+        normalized_contents: list[dict[str, Any]] = []
+        for item in messages:
+            role = "model" if item.get("role") == "assistant" else "user"
+            text = (item.get("content") or "").strip()
+            if not text:
+                continue
+            if normalized_contents and normalized_contents[-1]["role"] == role:
+                normalized_contents[-1]["parts"][0]["text"] += f"\n\n{text}"
+            else:
+                normalized_contents.append({"role": role, "parts": [{"text": text}]})
+
+        while normalized_contents and normalized_contents[0]["role"] != "user":
+            normalized_contents.pop(0)
+
+        if not normalized_contents:
+            normalized_contents = [{"role": "user", "parts": [{"text": "Hello"}]}]
+
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(url, json={
                 "systemInstruction": {"parts": [{"text": system_prompt}]},
-                "contents": contents,
+                "contents": normalized_contents,
                 "generationConfig": {"temperature": 0.2},
             })
             response.raise_for_status()

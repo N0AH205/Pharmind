@@ -39,11 +39,13 @@ CLINICAL_ADVICE_DISCLAIMER = (
     "for professional medical guidance."
 )
 
-# Heuristic clinical advice trigger terms for fallback
+# Heuristic clinical advice trigger terms for fallback (patient-specific advice requests)
 _CLINICAL_TRIGGERS = [
-    "should i", "can i", "safe", "dose", "dosage", "pregnant", "pregnancy",
-    "recommend", "treat", "cure", "prescribe", "ulcer", "disease", "interact",
-    "side effect", "adverse", "allergy", "allergic", "harmful", "toxic"
+    "should i take", "can i take", "how much should i take",
+    "what dose should i take", "my dose", "my dosage", "for my headache",
+    "for my pain", "cure my", "treat my", "my symptoms", "my disease",
+    "my doctor prescribed", "i am pregnant", "can i give my child",
+    "am i allergic", "can i drink alcohol with my"
 ]
 
 

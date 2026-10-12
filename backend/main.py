@@ -89,10 +89,10 @@ async def chat_endpoint(req: ChatRequest):
     from rag.safety import check_query_safety
     is_safe, refusal = await check_query_safety(req.question)
     if not is_safe:
-        return JSONResponse(
-            status_code=400,
-            content={"success": False, "error": refusal or "Query contains clinical advice and was refused."}
-        )
+        return {
+            "success": True,
+            "answer": refusal or "Pharmind is designed for educational and reference purposes only. We cannot provide patient-specific clinical advice, diagnosis, or personal dosage instructions. Always consult a licensed clinician for medical guidance."
+        }
 
     try:
         reply = await answer_chat_question(

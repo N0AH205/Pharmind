@@ -79,15 +79,36 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
 
     const titleCandidate = trimmed.length > 30 ? trimmed.slice(0, 28).trim() + "…" : trimmed;
 
-    // Check if query is a SMILES or common chemical query vs a conversational question
+    const lower = trimmed.toLowerCase();
+    const words = trimmed.split(/\s+/).filter(Boolean);
+
+    // Check if query is a pure SMILES formula, PubChem CID, or standalone chemical entity
+    const isSmilesPattern = !trimmed.includes(" ") && (/[=#()@\\/]/.test(trimmed) || /^[A-Z][a-z]?\d*$/.test(trimmed));
+    const isPubChemCidPattern = /^cid\s*\d+$/i.test(trimmed);
+
+    // Conversational indicators
+    const hasQuestionSign = trimmed.includes("?") || trimmed.includes("!");
+    const conversationalStarters = [
+      "what", "how", "why", "when", "who", "which", "where",
+      "can", "could", "would", "should", "is", "are", "does", "do", "will",
+      "tell", "explain", "describe", "summarize", "compare", "difference",
+      "show", "list", "give", "help", "find", "search", "check", "verify"
+    ];
+    const startsConversational = conversationalStarters.some((s) => lower.startsWith(s + " ") || lower === s);
+
+    const conversationalKeywords = [
+      "side effect", "side-effect", "adverse", "toxicity", "mechanism", "pharmacodynamics",
+      "pharmacokinetics", "adme", "half-life", "half life", "metabolism", "metabolize",
+      "interaction", "interact", "indication", "contraindication", "dosage", "dose",
+      "symptom", "disease", "treatment", "treat", "cure", "prescribe", "safe with", "taken with"
+    ];
+    const hasConversationalKeyword = conversationalKeywords.some((kw) => lower.includes(kw));
+
+    // A query is a drug monograph lookup only if it's a SMILES, CID, or 1-2 word name with no conversational intent
     const isSmilesOrDrug =
-      trimmed.length < 80 &&
-      !trimmed.includes("?") &&
-      !trimmed.toLowerCase().startsWith("what") &&
-      !trimmed.toLowerCase().startsWith("how") &&
-      !trimmed.toLowerCase().startsWith("why") &&
-      !trimmed.toLowerCase().startsWith("can") &&
-      !trimmed.toLowerCase().startsWith("is");
+      isSmilesPattern ||
+      isPubChemCidPattern ||
+      (words.length <= 2 && !hasQuestionSign && !startsConversational && !hasConversationalKeyword);
 
     if (isSmilesOrDrug) {
       const userMsg: ChatMessage = {

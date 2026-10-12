@@ -94,6 +94,14 @@
   min-width: 0;
 }
 
+.assistantTextCard {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 14px 18px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
 /* ── Error bubble ── */
 .errorBubble {
   display: flex;

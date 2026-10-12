@@ -81,9 +81,11 @@ export default function ChatInterface({ messages, loading, streamStatus }: Props
                 <Image src="/pharmind-logo.png" alt="Pharmind" width={22} height={22} style={{ objectFit: "contain" }} />
               </div>
               <div className={styles.assistantContent}>
-                <p style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: "0.92rem", lineHeight: "1.6" }}>
-                  {msg.text}
-                </p>
+                <div className={styles.assistantTextCard}>
+                  <p style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: "0.93rem", lineHeight: "1.65", color: "#1f2937" }}>
+                    {msg.text}
+                  </p>
+                </div>
               </div>
             </div>
           )}
