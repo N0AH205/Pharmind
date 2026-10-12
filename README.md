@@ -14,9 +14,8 @@ It searches biomedical databases, visualizes 2D and 3D molecular structures, ind
 
 ---
 
-## Features at a Glance
+## Features
 
-* **Discovery Portal (`/`)**: A clean, modern homepage with real-time drug search, quick query suggestions (*Paracetamol, Aspirin, Ibuprofen, Caffeine*), and platform navigation.
 * **Interactive Research Workspace (`/chat`)**: A research environment featuring multi-turn conversational reasoning, follow-up queries, and structured data views.
 * **Molecular Structure Visualizer**: Automatic chemical resolution via PubChem with interactive 2D structure diagrams, 3D molecular rendering, IUPAC nomenclature, SMILES, InChI, and PubChem CIDs.
 * **Comprehensive Pharmacology Monographs**:
@@ -26,35 +25,32 @@ It searches biomedical databases, visualizes 2D and 3D molecular structures, ind
   * **Therapeutic Profile**: Indications, contraindications, adverse reactions, and drug interactions.
 * **Grounded & Cited Evidence**: Every claim links directly to primary sources across PubMed abstracts, DailyMed SPL labels, ClinicalTrials.gov records, and PubChem.
 * **Chat with PDF**: Upload and index your own scientific papers, clinical trials, or monographs directly into your local vector database with one click.
-* **Persistent Recent Chats**: Research history is automatically preserved locally in your browser (`localStorage`). Seamlessly switch between past investigations, auto-title threads, and delete sessions without requiring an account.
 
 ---
 
-## 🚀 Easy Setup Guide (For Everyone)
+## 🚀 Easy Setup Guide 
 
-You do **not** need to have Git or Ollama installed to run Pharmind.
-
-### 📥 Step 1: Download the Files (No Git Needed)
+### Step 1: Download the Files
 1. Visit **[https://github.com/N0AH205/Pharmer](https://github.com/N0AH205/Pharmer)** in your browser.
 2. Click the green **`<> Code`** button at the top right, then click **Download ZIP**.
 3. Right-click the downloaded `.zip` file on your computer and choose **Extract All...**.
 
 ---
 
-### 🐳 Step 2: Install Docker Desktop (One-time)
+### Step 2: Install Docker Desktop 
 1. Download and install **[Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)**.
 2. Open Docker Desktop from your Start menu and wait 15–30 seconds until the status icon in the bottom-left turns **green** (indicating Docker is running).
 
 ---
 
-### 🔑 Step 3: Get Your Free Google Gemini API Key (30 Seconds)
+### Step 3: Get Your Free Google Gemini API Key
 Pharmind uses Google Gemini to generate answers quickly with zero GPU hardware requirements:
 1. Visit **[Google AI Studio API Keys](https://aistudio.google.com/app/apikey)** (log in with any standard Google account).
 2. Click **Create API Key** and copy it to your clipboard.
 
 ---
 
-### ▶️ Step 4: Double-Click `start-pharmer.bat`!
+### Step 4: Double-Click `start-pharmer.bat`!
 1. Open the extracted folder and double-click **`start-pharmer.bat`**.
 2. If you haven't configured a key yet, the launcher will prompt:
    ```text
