@@ -95,12 +95,16 @@ async def chat_endpoint(req: ChatRequest):
         }
 
     try:
-        reply = await answer_chat_question(
+        reply_answer, reply_sources = await answer_chat_question(
             req.question,
             history=req.history,
             active_drug=req.active_drug,
         )
-        return {"success": True, "answer": reply}
+        return {
+            "success": True,
+            "answer": reply_answer,
+            "sources": reply_sources,
+        }
     except Exception as exc:
         return JSONResponse(status_code=500, content={"success": False, "error": str(exc)})
 

@@ -256,6 +256,7 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
         id: `assistant-${Date.now()}`,
         role: "assistant",
         text: res.success ? res.answer : undefined,
+        sources: res.success ? (res.sources || []) : undefined,
         error: res.success ? undefined : res.error || "Could not generate answer.",
         timestamp: new Date().toISOString(),
       };

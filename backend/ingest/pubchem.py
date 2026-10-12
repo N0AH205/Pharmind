@@ -233,7 +233,7 @@ async def get_pug_view_evidence(cid: int) -> list[dict]:
             if response.status_code != 200:
                 return []
             sections = response.json().get("Record", {}).get("Section", [])
-            url = f"{PUG_VIEW_URL}/{cid}/JSON?heading={urllib.parse.quote_plus(heading)}"
+            url = f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid}#section={urllib.parse.quote_plus(heading)}"
             return _flatten_pug_view_sections(sections, cid, url)
         except Exception:
             return []

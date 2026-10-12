@@ -69,10 +69,17 @@ def resolve_citations(
             continue
 
         seen.add(normalised)
+        raw_url = chunk.get("url") or None
+        if raw_url and "pug_view/data/compound/" in raw_url:
+            m = re.search(r"pug_view/data/compound/(\d+)/JSON(?:\?heading=([^&#]+))?", raw_url, flags=re.I)
+            if m:
+                cid_val = m.group(1)
+                heading_val = m.group(2)
+                raw_url = f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid_val}#section={heading_val}" if heading_val else f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid_val}"
         citations.append(
             Citation(
                 source=chunk.get("source", "Unknown source"),
-                url=chunk.get("url") or None,
+                url=raw_url,
                 text=chunk.get("text") or None,
                 publication_date=chunk.get("publication_date") or None,
                 authors=chunk.get("authors") or None,

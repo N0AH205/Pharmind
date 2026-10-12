@@ -25,11 +25,31 @@ Reference passages:
 """
 
 
+def _clean_source_url(url: str | None, chunk: dict | None = None) -> str:
+    if not url:
+        return ""
+    m = re.search(r"pug_view/data/compound/(\d+)/JSON(?:\?heading=([^&#]+))?", url, flags=re.I)
+    if m:
+        cid_val = m.group(1)
+        heading_val = m.group(2)
+        if heading_val:
+            return f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid_val}#section={heading_val}"
+        return f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid_val}"
+    return url
+
+
+def _clean_source_name(chunk: dict) -> str:
+    source = (chunk.get("source") or "Literature Reference").strip()
+    source = re.sub(r"\bPUG View\b", "", source, flags=re.I).strip()
+    source = re.sub(r"\s+", " ", source)
+    return source
+
+
 async def answer_chat_question(
     question: str,
     history: list[dict[str, str]] | None = None,
     active_drug: dict[str, str | None] | None = None,
-) -> str:
+) -> tuple[str, list[dict]]:
     """Answer a follow-up, preserving both sides of history and drug identity."""
     retriever = get_retriever()
     active_drug = active_drug or {}
@@ -73,7 +93,7 @@ async def answer_chat_question(
         logger.warning("Live PubMed search failed; using local evidence only: %s", exc)
 
     if not chunks and not online_chunks:
-        return f"No relevant evidence was found in the local index or online search for {drug_name}. Try a more specific compound name or add a source document."
+        return f"No relevant evidence was found in the local index or online search for {drug_name}. Try a more specific compound name or add a source document.", []
 
     # Reserve room for both live results and indexed evidence. If the local
     # reranker is unavailable, vector distances from the two sources are not
@@ -94,10 +114,51 @@ async def answer_chat_question(
     conversation.append({"role": "user", "content": question[:6000]})
 
     answer = await generate_chat_response(prompt, conversation)
-    citations = []
-    for sid, chunk in source_map.items():
-        if re.search(rf"\b{re.escape(sid)}\b", answer, flags=re.IGNORECASE):
-            citations.append(f"[{sid}] {chunk.get('source', 'Unknown source')} — {chunk.get('url') or 'local document'}")
-    if citations:
-        answer = f"{answer.strip()}\n\nSources\n" + "\n".join(citations)
-    return answer.strip()
+
+    # 1. Detect all SOURCE_N referenced in answer in order of appearance
+    found_sids = re.findall(r"\bSOURCE_(\d+)\b", answer, flags=re.IGNORECASE)
+    sid_to_num: dict[str, int] = {}
+    sources: list[dict] = []
+
+    for sid_num in found_sids:
+        full_sid = f"SOURCE_{sid_num}".upper()
+        if full_sid not in sid_to_num and full_sid in source_map:
+            new_num = len(sid_to_num) + 1
+            sid_to_num[full_sid] = new_num
+            chunk = source_map[full_sid]
+            raw_url = chunk.get("url") or ""
+            clean_url = _clean_source_url(raw_url, chunk)
+            name = _clean_source_name(chunk)
+            sources.append({
+                "id": full_sid,
+                "num": new_num,
+                "name": name,
+                "url": clean_url,
+                "field": chunk.get("field", ""),
+            })
+
+    # 2. Replace bracketed citations [SOURCE_2, SOURCE_5] -> [1, 2]
+    def _replace_source_bracket(m: re.Match) -> str:
+        inner = m.group(1)
+        sub_sids = re.findall(r"SOURCE_(\d+)", inner, flags=re.IGNORECASE)
+        nums = [str(sid_to_num[f"SOURCE_{s}".upper()]) for s in sub_sids if f"SOURCE_{s}".upper() in sid_to_num]
+        if not nums:
+            return ""
+        return f"[{', '.join(nums)}]"
+
+    clean_answer = re.sub(
+        r"\[\s*(SOURCE_\d+(?:\s*,\s*SOURCE_\d+)*)\s*\]",
+        _replace_source_bracket,
+        answer,
+        flags=re.IGNORECASE,
+    )
+
+    # Clean any stray individual SOURCE_N
+    for sid, num in sid_to_num.items():
+        clean_answer = re.sub(rf"\b{re.escape(sid)}\b", f"[{num}]", clean_answer, flags=re.IGNORECASE)
+
+    # Strip any redundant plain-text trailing "Sources" dump if the model generated one
+    clean_answer = re.sub(r"\n+\s*(?:Sources|References)\s*:\s*\n[\s\S]*$", "", clean_answer, flags=re.IGNORECASE)
+    clean_answer = re.sub(r"\n+\s*Sources\s*\n[\s\S]*$", "", clean_answer, flags=re.IGNORECASE)
+
+    return clean_answer.strip(), sources

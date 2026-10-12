@@ -115,11 +115,20 @@ export interface QueryResponse {
   error?: string;
 }
 
+export interface ChatSource {
+  id: string;
+  num: number;
+  name: string;
+  url: string;
+  title?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   smiles?: string;
   text?: string;
+  sources?: ChatSource[];
   drugInfo?: DrugInfo;
   error?: string;
   timestamp: Date | string;
