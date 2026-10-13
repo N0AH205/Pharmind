@@ -486,7 +486,7 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
 
         {/* Bottom User Profile */}
         <div className={styles.userProfile}>
-          <div className={styles.avatar}>JW</div>
+          <div className={styles.avatar}>NS</div>
           <div className={styles.userInfo}>
             <span className={styles.userName}>Noah Stephen</span>
             <span className={styles.userEmail}>n04hstephen@gm...</span>
