@@ -9,66 +9,38 @@ import styles from "./homepage.module.css";
 const FEATURES = [
   {
     title: "Best Coverage",
-    iconClass: styles.iconPurple,
+    badge: "Literature & Registries",
+    image: "/features/coverage.jpg",
     desc: "Comprehensive indexing of millions of biomedical papers, PubMed articles, and chemical registries.",
     sampleQuery: "What is the mechanism of action of Aspirin?",
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <line x1="2" y1="12" x2="22" y2="12" />
-        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-      </svg>
-    ),
   },
   {
     title: "Full-Text Search",
-    iconClass: styles.iconBlue,
+    badge: "Deep PDF Indexing",
+    image: "/features/search.jpg",
     desc: "Search deeply within full-text scholarly PDFs, drug monographs, and clinical literature.",
     sampleQuery: "Paracetamol pharmacokinetics and hepatic metabolism pathways",
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
-        <polyline points="10 9 9 9 8 9" />
-      </svg>
-    ),
   },
   {
     title: "Smart Citations",
-    iconClass: styles.iconOrange,
+    badge: "Source Grounding",
+    image: "/features/citations.jpg",
     desc: "Context-grounded citations showing supporting, contrasting, and mentioning evidence.",
     sampleQuery: "Contraindications and drug interactions for Ibuprofen",
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-      </svg>
-    ),
   },
   {
     title: "Verifiable Evidence",
-    iconClass: styles.iconTeal,
+    badge: "Validated Data",
+    image: "/features/evidence.jpg",
     desc: "Every answer and chemical claim is tied back to transparent source citations and PubChem data.",
     sampleQuery: "CC(=O)Oc1ccccc1C(=O)O",
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-        <polyline points="9 12 11 14 15 10" />
-      </svg>
-    ),
   },
   {
     title: "Trusted by Millions",
-    iconClass: styles.iconAmber,
+    badge: "Global Research",
+    image: "/features/trust.jpg",
     desc: "Accelerating discovery for researchers, pharmacologists, and academics worldwide.",
     sampleQuery: "What are the common adverse effects of Caffeine?",
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-        <circle cx="12" cy="7" r="4" />
-      </svg>
-    ),
   },
 ];
 
@@ -218,7 +190,13 @@ export default function HomePage() {
 
         {/* ── "More coverage. More confidence." Section ── */}
         <section className={styles.coverageSection}>
-          <h2 className={styles.sectionHeading}>More coverage. More confidence.</h2>
+          <div className={styles.sectionHeaderWrap}>
+            <span className={styles.sectionEyebrow}>Core Intelligence</span>
+            <h2 className={styles.sectionHeading}>More coverage. More confidence.</h2>
+            <p className={styles.sectionSubtitle}>
+              Empowering pharmacological research with transparent evidence, chemical resolution, and scholarly verification.
+            </p>
+          </div>
 
           <div className={styles.cardsGrid}>
             {FEATURES.map((item) => (
@@ -232,11 +210,26 @@ export default function HomePage() {
                   if (e.key === "Enter" || e.key === " ") handleSuggestion(item.sampleQuery);
                 }}
               >
-                <div className={`${styles.cardIconWrap} ${item.iconClass}`}>
-                  {item.icon}
+                <div className={styles.cardImageContainer}>
+                  <img
+                    src={item.image}
+                    alt={item.title}
+                    className={styles.cardCoverImage}
+                    loading="lazy"
+                  />
+                  <div className={styles.cardImageOverlay} />
+                  <span className={styles.cardBadge}>{item.badge}</span>
                 </div>
-                <h3 className={styles.cardTitle}>{item.title}</h3>
-                <p className={styles.cardDesc}>{item.desc}</p>
+                <div className={styles.cardBody}>
+                  <h3 className={styles.cardTitle}>{item.title}</h3>
+                  <p className={styles.cardDesc}>{item.desc}</p>
+                  <div className={styles.cardAction}>
+                    <span>Explore evidence</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M5 12h14M12 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
