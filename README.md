@@ -32,7 +32,7 @@ It searches biomedical databases, visualizes 2D and 3D molecular structures, ind
 ## 🚀 Easy Setup Guide 
 
 ### Step 1: Download the Files
-1. Visit **[https://github.com/N0AH205/Pharmer](https://github.com/N0AH205/Pharmer)** in your browser.
+1. Visit **[https://github.com/N0AH205/Pharmind](https://github.com/N0AH205/Pharmind)** in your browser.
 2. Click the green **`<> Code`** button at the top right, then click **Download ZIP**.
 3. Right-click the downloaded `.zip` file on your computer and choose **Extract All...**.
 
