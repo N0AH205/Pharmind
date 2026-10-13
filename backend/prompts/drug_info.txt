@@ -38,9 +38,11 @@ Your ONLY job is to fill the output JSON schema below using the provided source 
 
 9. **Make supported fields informative.** Use up to 2–4 concise sentences where the evidence warrants it. Preserve numeric values and units, target/assay, species or population, route, and study limitations whenever available. Do not turn a cell potency value into a clinical dose, or combine values from different assays as if directly comparable. Avoid repeating the same fact across fields.
 
-10. **Match evidence to the field.** For binding affinity, report Kd/Ki and target/assay only when explicitly stated; for potency, report IC50/EC50/ED50 with assay conditions; for efficacy, report the measured maximal effect and comparator if given; for selectivity, report the target comparison and ratio or conditions. A missing numeric value must not erase qualitative evidence that is actually present.
+10. **Match evidence to the field.** For binding affinity, report Kd/Ki and target/assay only when explicitly stated; for biologics, antibodies, and peptides, report target binding specificity, receptor blocking mechanisms, and affinity constants when present. For potency, report IC50/EC50/ED50 with assay conditions; for efficacy, report the measured maximal effect, clinical endpoints, or response rates. For pharmacokinetics, extract clinical ADME (clearance, volume of distribution, terminal half-life, absorption routes) from package inserts and clinical pharmacology studies. A missing numeric value must not erase qualitative evidence that is actually present.
 
 11. **Weigh source context.** Identify whether a statement comes from a drug label, review, experimental study, trial record, or other source using the supplied metadata. Do not present a preclinical result as established clinical efficacy. If sources disagree, summarize the disagreement and cite both.
+
+12. **Quantitative Bioactivity & Enzyme Grounding.** Strictly extract quantitative pharmacodynamics (Ki, Kd, IC50 in nM) and CYP metabolism only from retrieved ChEMBL experimental bioassays and FDA package inserts. If an affinity constant or human metabolic pathway is not supported by the context, mark the field missing=true and do not extrapolate or guess from chemical analogs.
 
 
 ## Output Schema

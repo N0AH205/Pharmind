@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import type { ChemicalStructure } from "@/lib/types";
-import CitationBadge from "./CitationBadge";
 import styles from "./StructureViewer.module.css";
 
 interface Props {
@@ -19,28 +18,70 @@ function formatChemicalFormula(formula: string): string {
 
 export default function StructureViewer({ structure }: Props) {
   const [imgError, setImgError] = useState(false);
+  const isBiologic = structure.drug_type === "biologic" || Boolean(structure.biologic_class);
 
   return (
     <div className={styles.container}>
-      <div className={styles.imageWrap}>
-        {structure.image_url && !imgError ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            src={structure.image_url}
-            alt={`Chemical structure of ${structure.iupac_name || structure.smiles}`}
-            className={styles.image}
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <div className={styles.imageFallback}>
-            <span>Structure image unavailable</span>
+      {isBiologic ? (
+        <div className={styles.biologicBanner}>
+          <div className={styles.biologicIcon}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
           </div>
-        )}
-      </div>
+          <div className={styles.biologicInfo}>
+            <div className={styles.biologicTitle}>{structure.biologic_class || "Biologic / Macromolecule"}</div>
+            <div className={styles.biologicDesc}>
+              {structure.target ? `Target: ${structure.target}` : "Recombinant protein / Monoclonal antibody therapeutic"}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className={styles.imageWrap}>
+          {structure.image_url && !imgError ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={structure.image_url}
+              alt={`Chemical structure of ${structure.iupac_name || structure.smiles}`}
+              className={styles.image}
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            <div className={styles.imageFallback}>
+              <span>Structure image unavailable</span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className={styles.properties}>
         <table className={styles.structureTable}>
           <tbody>
+            {structure.drug_type && (
+              <tr>
+                <td className={styles.tableLabel}>Modality</td>
+                <td className={styles.tableValue}>
+                  <strong style={{ textTransform: "capitalize" }}>{structure.drug_type.replace(/_/g, " ")}</strong>
+                </td>
+              </tr>
+            )}
+            {structure.biologic_class && (
+              <tr>
+                <td className={styles.tableLabel}>Classification</td>
+                <td className={styles.tableValue}>
+                  <strong>{structure.biologic_class}</strong>
+                </td>
+              </tr>
+            )}
+            {structure.target && (
+              <tr>
+                <td className={styles.tableLabel}>Primary Target</td>
+                <td className={styles.tableValue}>
+                  <strong>{structure.target}</strong>
+                </td>
+              </tr>
+            )}
             {structure.molecular_formula && (
               <tr>
                 <td className={styles.tableLabel}>Formula</td>
@@ -82,7 +123,7 @@ export default function StructureViewer({ structure }: Props) {
               <tr>
                 <td className={styles.tableLabel}>SMILES</td>
                 <td className={styles.tableValue}>
-                  <code className={styles.codeBlock}>{structure.smiles}</code>
+                  <span className={styles.smilesText}>{structure.smiles}</span>
                 </td>
               </tr>
             )}
@@ -96,12 +137,6 @@ export default function StructureViewer({ structure }: Props) {
             )}
           </tbody>
         </table>
-
-        {structure.sources && structure.sources.length > 0 && (
-          <div className={styles.citationContainer}>
-            <CitationBadge citations={structure.sources} />
-          </div>
-        )}
       </div>
     </div>
   );

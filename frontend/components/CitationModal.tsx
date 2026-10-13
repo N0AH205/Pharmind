@@ -1,5 +1,5 @@
-"use client";
-
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import styles from "./CitationModal.module.css";
 import type { Citation } from "@/lib/types";
 
@@ -9,9 +9,15 @@ interface Props {
 }
 
 export default function CitationModal({ citation, onClose }: Props) {
-  if (!citation) return null;
+  const [mounted, setMounted] = useState(false);
 
-  return (
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!citation || !mounted) return null;
+
+  return createPortal(
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
@@ -60,6 +66,7 @@ export default function CitationModal({ citation, onClose }: Props) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

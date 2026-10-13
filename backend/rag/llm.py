@@ -11,12 +11,15 @@ Phase 3:   pipeline.py calls generate_structured_output().
 """
 
 import json
+import logging
 import os
 from typing import Any
 
 import ollama as ollama_sdk
 from pydantic import BaseModel
 from rag.config import require_network_allowed
+
+logger = logging.getLogger(__name__)
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -27,6 +30,20 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+
+
+def _get_gemini_model_candidates() -> list[str]:
+    """Return ordered list of Gemini models to try, falling back on 503/429/timeout errors."""
+    raw_fallbacks = os.getenv(
+        "GEMINI_FALLBACK_MODELS",
+        "gemini-2.0-flash,gemini-1.5-flash,gemini-3.5-flash,gemini-3.1-flash-lite,gemini-flash-latest",
+    )
+    fallbacks = [m.strip() for m in raw_fallbacks.split(",") if m.strip()]
+    candidates = [GEMINI_MODEL]
+    for fb in fallbacks:
+        if fb not in candidates:
+            candidates.append(fb)
+    return candidates
 
 
 def _llm_output_schema(schema: type[BaseModel]) -> dict[str, Any]:
@@ -144,16 +161,33 @@ async def generate_chat_response(
         if not normalized_contents:
             normalized_contents = [{"role": "user", "parts": [{"text": "Hello"}]}]
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(url, json={
-                "systemInstruction": {"parts": [{"text": system_prompt}]},
-                "contents": normalized_contents,
-                "generationConfig": {"temperature": 0.2},
-            })
-            response.raise_for_status()
-            data = response.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+        model_candidates = _get_gemini_model_candidates()
+        last_exc = None
+        for i, model_name in enumerate(model_candidates):
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
+            try:
+                async with httpx.AsyncClient(timeout=45.0) as client:
+                    response = await client.post(url, json={
+                        "systemInstruction": {"parts": [{"text": system_prompt}]},
+                        "contents": normalized_contents,
+                        "generationConfig": {"temperature": 0.2},
+                    })
+                    if response.status_code in (503, 429, 404) and i < len(model_candidates) - 1:
+                        logger.warning(
+                            f"Gemini model '{model_name}' returned {response.status_code}, falling back to '{model_candidates[i+1]}'..."
+                        )
+                        continue
+                    response.raise_for_status()
+                    data = response.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+            except Exception as exc:
+                last_exc = exc
+                if i < len(model_candidates) - 1:
+                    logger.warning(
+                        f"Gemini model '{model_name}' failed ({exc}), falling back to '{model_candidates[i+1]}'..."
+                    )
+                    continue
+                raise last_exc
 
     raise ValueError(f"Unknown LLM_PROVIDER: {LLM_PROVIDER!r}")
 
@@ -318,8 +352,6 @@ async def _call_gemini(
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY environment variable is not set.")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-
     payload = {
         "contents": [
             {
@@ -340,10 +372,30 @@ async def _call_gemini(
         }
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(url, json=payload)
-        resp.raise_for_status()
-        data = resp.json()
+    model_candidates = _get_gemini_model_candidates()
+    last_exc = None
+    data = None
+    for i, model_name in enumerate(model_candidates):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
+        try:
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                resp = await client.post(url, json=payload)
+                if resp.status_code in (503, 429, 404) and i < len(model_candidates) - 1:
+                    logger.warning(
+                        f"Gemini model '{model_name}' returned {resp.status_code}, automatically falling back to '{model_candidates[i+1]}'..."
+                    )
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+            break
+        except Exception as exc:
+            last_exc = exc
+            if i < len(model_candidates) - 1:
+                logger.warning(
+                    f"Gemini model '{model_name}' failed ({exc}), automatically falling back to '{model_candidates[i+1]}'..."
+                )
+                continue
+            raise last_exc
 
     try:
         raw = data["candidates"][0]["content"]["parts"][0]["text"]

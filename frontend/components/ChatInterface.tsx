@@ -63,23 +63,16 @@ export default function ChatInterface({ messages, loading, streamStatus }: Props
         <div key={msg.id} className={styles.message}>
           {msg.role === "user" && (
             <div className={styles.userBubble}>
-              <div className={styles.userAvatar} aria-label="You">You</div>
               <div className={styles.userContent}>
-                <span className={styles.userLabel}>{msg.smiles ? "Drug query" : "Question"}</span>
-                {msg.smiles ? (
-                  <code className={styles.userSmiles}>{msg.smiles}</code>
-                ) : (
-                  <p className={styles.line}>{msg.text}</p>
-                )}
+                <div className={styles.userBubbleText}>
+                  {msg.smiles || msg.text}
+                </div>
               </div>
             </div>
           )}
 
           {msg.role === "assistant" && msg.text && (
             <div className={styles.assistantBubble}>
-              <div className={styles.assistantAvatar} aria-label="Pharmind">
-                <Image src="/pharmind-logo.png" alt="Pharmind" width={22} height={22} style={{ objectFit: "contain" }} />
-              </div>
               <div className={styles.assistantContent}>
                 <AssistantTextCard msg={msg} />
               </div>
@@ -88,9 +81,6 @@ export default function ChatInterface({ messages, loading, streamStatus }: Props
 
           {msg.role === "assistant" && msg.drugInfo && (
             <div className={styles.assistantBubble}>
-              <div className={styles.assistantAvatar} aria-label="Pharmind">
-                <Image src="/pharmind-logo.png" alt="Pharmind" width={22} height={22} style={{ objectFit: "contain" }} />
-              </div>
               <div className={styles.assistantContent}>
                 <DrugInfoCard data={msg.drugInfo} />
               </div>
@@ -111,9 +101,6 @@ export default function ChatInterface({ messages, loading, streamStatus }: Props
 
       {loading && (
         <div className={styles.loadingBubble}>
-          <div className={styles.assistantAvatar} aria-hidden="true">
-            <Image src="/pharmer-logo.png" alt="" width={28} height={11} />
-          </div>
           <div className={styles.loadingContent}>
             <div className={styles.loadingDots}>
               <span /><span /><span />
@@ -144,74 +131,134 @@ function cleanUrl(url?: string): string {
   return url;
 }
 
+function getSourceMeta(url: string, name?: string): { tag: string; label: string } {
+  const lower = (url || "").toLowerCase();
+  if (lower.includes("dailymed.nlm.nih.gov")) {
+    return { tag: "DailyMed", label: name || "DailyMed FDA Drug Label" };
+  }
+  if (lower.includes("pubchem.ncbi.nlm.nih.gov")) {
+    return { tag: "PubChem", label: name || "PubChem Compound Record" };
+  }
+  if (lower.includes("pubmed.ncbi.nlm.nih.gov")) {
+    return { tag: "PubMed", label: name || "PubMed Scientific Citation" };
+  }
+  if (lower.includes("fda.gov")) {
+    return { tag: "FDA", label: name || "FDA Drug Approval Monograph" };
+  }
+  if (lower.includes("ebi.ac.uk/chembl") || lower.includes("chembl")) {
+    return { tag: "ChEMBL", label: name || "ChEMBL Bioactivity Record" };
+  }
+  if (lower.includes("clinicaltrials.gov")) {
+    return { tag: "ClinicalTrials", label: name || "ClinicalTrials.gov Registry" };
+  }
+  return { tag: "Literature", label: name || "Scientific Literature Reference" };
+}
+
 function parseSourcesAndText(rawText: string, initialSources?: ChatSource[]) {
   let text = rawText || "";
-  let sources: ChatSource[] = (initialSources || []).map((s) => ({
-    ...s,
-    url: cleanUrl(s.url),
-  }));
+  const sourcesMap = new Map<string, ChatSource>();
 
-  // Robust splitting on "Sources" or "References" header
-  const sourcesHeaderRegex = /(?:\r?\n)+\s*(?:Sources|References):?\s*(?:\r?\n)+/i;
-  const parts = text.split(sourcesHeaderRegex);
-
-  if (parts.length > 1) {
-    text = parts[0].trim();
-    const blockText = parts.slice(1).join("\n");
-
-    // If initialSources was not provided or empty, parse lines from the block
-    if (sources.length === 0) {
-      const lines = blockText.split(/\r?\n/);
-      const sidMap: Record<string, number> = {};
-
-      lines.forEach((line) => {
-        const lineMatch = line.match(
-          /\[(?:SOURCE_)?(\d+)\]\s*([^—–-]+?)\s*[—–-]\s*(https?:\/\/\S+)/i
-        );
-        if (lineMatch) {
-          const rawNum = lineMatch[1];
-          const rawName = lineMatch[2].trim();
-          const rawUrl = lineMatch[3].trim();
-          const sid = `SOURCE_${rawNum}`.toUpperCase();
-          const num = sources.length + 1;
-          sidMap[sid] = num;
-          sources.push({
-            id: sid,
-            num,
-            name: rawName.replace(/PUG View\s*/i, "").trim(),
-            url: cleanUrl(rawUrl),
-          });
-        }
+  // Ingest existing sources
+  (initialSources || []).forEach((s) => {
+    const cleaned = cleanUrl(s.url);
+    if (cleaned && !sourcesMap.has(cleaned)) {
+      const meta = getSourceMeta(cleaned, s.name);
+      sourcesMap.set(cleaned, {
+        ...s,
+        num: sourcesMap.size + 1,
+        name: meta.label,
+        url: cleaned,
       });
+    }
+  });
 
-      // Replace any [SOURCE_X] in the prose with the sequential [num]
-      if (Object.keys(sidMap).length > 0) {
-        text = text.replace(
-          /\[\s*(SOURCE_\d+(?:\s*,\s*SOURCE_\d+)*)\s*\]/gi,
-          (m, inner) => {
-            const sids = inner.match(/SOURCE_\d+/gi) || [];
-            const nums = sids
-              .map((s: string) => sidMap[s.toUpperCase()])
-              .filter(Boolean);
-            return nums.length > 0 ? `[${nums.join(", ")}]` : "";
-          }
-        );
-      }
+  // Extract inline markdown citations with URLs: [1](http...) or [SOURCE_1](http...)
+  const inlineMarkdownRegex = /\[(?:SOURCE_)?\d*\]\((https?:\/\/[^\s)]+)\)/gi;
+  let matchMd: RegExpExecArray | null;
+  while ((matchMd = inlineMarkdownRegex.exec(text)) !== null) {
+    const rawUrl = cleanUrl(matchMd[1]);
+    if (rawUrl && !sourcesMap.has(rawUrl)) {
+      const meta = getSourceMeta(rawUrl);
+      sourcesMap.set(rawUrl, {
+        id: `SOURCE_${sourcesMap.size + 1}`,
+        num: sourcesMap.size + 1,
+        name: meta.label,
+        url: rawUrl,
+      });
     }
   }
 
-  // Also replace any remaining [SOURCE_X] with [X]
-  text = text.replace(/\[\s*SOURCE_(\d+)\s*\]/gi, "[$1]");
+  // Extract any raw trailing Sources / References block
+  const sourcesHeaderRegex = /(?:\r?\n)+\s*(?:Sources|References):?\s*(?:\r?\n)+/i;
+  const parts = text.split(sourcesHeaderRegex);
+  if (parts.length > 1) {
+    text = parts[0].trim();
+    const blockText = parts.slice(1).join("\n");
+    const lines = blockText.split(/\r?\n/);
+    lines.forEach((line) => {
+      const urlMatch = line.match(/(https?:\/\/[^\s)]+)/i);
+      if (urlMatch) {
+        const rawUrl = cleanUrl(urlMatch[1]);
+        if (rawUrl && !sourcesMap.has(rawUrl)) {
+          const meta = getSourceMeta(rawUrl);
+          sourcesMap.set(rawUrl, {
+            id: `SOURCE_${sourcesMap.size + 1}`,
+            num: sourcesMap.size + 1,
+            name: meta.label,
+            url: rawUrl,
+          });
+        }
+      }
+    });
+  }
 
-  return { text, sources };
+  // Remove all distracting inline tags from prose:
+  // 1. Markdown link tags: [1](http...) -> remove
+  text = text.replace(/\[\s*(?:SOURCE_)?\d+(?:\s*,\s*(?:SOURCE_)?\d+)*\s*\]\([^)]*\)/gi, "");
+  // 2. Generic markdown links with URLs: [text](http...) -> keep text only if text is descriptive, or remove if citation
+  text = text.replace(/\[(?:\d+|SOURCE_\d+|ref|citation)\]\([^)]*\)/gi, "");
+  // 3. Bracket citation tags: [1], [1, 2], [SOURCE_1], [SOURCE_1, SOURCE_2]
+  text = text.replace(/\[\s*(?:SOURCE_)?\d+(?:\s*,\s*(?:SOURCE_)?\d+)*\s*\]/gi, "");
+  text = text.replace(/\[\s*SOURCE_\w+\s*\]/gi, "");
+  text = text.replace(/\[(?:Citation|Evidence)\s*\d+\]/gi, "");
+  // 4. Any leftover empty brackets or isolated citation tags
+  text = text.replace(/\[\s*\]/g, "");
+  text = text.replace(/\[(?:PubChem|DailyMed|PubMed|ChEMBL)\]/gi, "");
+  // 5. XML/HTML tags
+  text = text.replace(/<\/?(?:ref|source|citation|evidence)[^>]*>/gi, "");
+
+  // Clean and normalize headings:
+  // Convert •**Heading:*, •**Heading:**, **Heading:*, **Heading:** into clean ### Heading
+  text = text.replace(
+    /(?:^|\n)\s*[•*-]?\s*\*\*+([^*\n]+?)(?:\*+:|\*+|\*\*|:\*)\s*(?=\n|$)/g,
+    "\n\n### $1\n\n"
+  );
+  // Remove trailing colon or stray asterisks in markdown headings
+  text = text.replace(/(?:^|\n)\s*###\s+([^\n]+?):+\s*(?=\n|$)/g, "\n\n### $1\n\n");
+  // Clean malformed bold headers like **Heading:* -> **Heading:**
+  text = text.replace(/\*\*([^*\n]+?)\*:/g, "**$1:**");
+  text = text.replace(/\*\*([^*\n]+?):\*/g, "**$1:**");
+
+  // Ensure double newlines before every bullet point and heading
+  text = text.replace(/([^\n])\n\s*([•*-]\s+)/g, "$1\n\n$2");
+  text = text.replace(/([^\n])\n\s*(###\s+)/g, "$1\n\n$2");
+  // Normalize bullet spacing: ensure bullet character has space after it
+  text = text.replace(/(?:^|\n)\s*[•]\s*([^\s•\n])/g, "\n• $1");
+
+  // Fix punctuation spacing resulting from stripped citations (e.g. "stimulant ." -> "stimulant.")
+  text = text.replace(/\s+([.,;:!?])/g, "$1");
+  text = text.replace(/[ \t]{2,}/g, " ");
+
+  const sources = Array.from(sourcesMap.values());
+  return { text: text.trim(), sources };
 }
 
 function renderInlineWithFormatting(str: string, baseKey: string) {
-  const chunks = str.split(/(\*\*[^*]+\*\*)/g);
+  const chunks = str.split(/(\*\*[^*\n]+\*\*)/g);
   return chunks.map((chunk, cIdx) => {
     if (chunk.startsWith("**") && chunk.endsWith("**") && chunk.length > 4) {
       return (
-        <strong key={`${baseKey}-b-${cIdx}`} style={{ fontWeight: 650, color: "#111827" }}>
+        <strong key={`${baseKey}-b-${cIdx}`} className={styles.proseBold}>
           {chunk.slice(2, -2)}
         </strong>
       );
@@ -227,25 +274,31 @@ function FormattedProse({
   text: string;
   sources: ChatSource[];
 }) {
-  const normalizedText = text.replace(/([^\n])\s*([*•-])\s+(\*\*|[A-Z])/g, "$1\n\n$2 $3");
-  const paragraphs = normalizedText.split(/\n\n+/).filter(Boolean);
+  const normalizedText = text
+    .replace(/(?:^|\n)\s*[•*-]\s*\*\*+([^*\n]+?)(?:\*+:|\*+|\*\*|:\*)\s*(?=\n|$)/g, "\n\n### $1\n\n")
+    .replace(/([^\n])\s*([*•-])\s+(\*\*|[A-Z])/g, "$1\n\n$2 $3")
+    .replace(/(?:^|\n)\s*[•]\s*([^\s•\n])/g, "\n• $1")
+    .replace(/\n{3,}/g, "\n\n");
+
+  const paragraphs = normalizedText.split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
 
   const renderSegment = (segText: string, pIdx: number) => {
-    const parts = segText.split(/(\[\s*\d+(?:\s*,\s*\d+)*\s*\])/g);
+    const parts = segText.split(/(\[\s*\d+(?:\s*,\s*\d+)*\s*\](?:\([^)]*\))?)/g);
 
     return parts.map((part, idx) => {
-      const match = part.match(/^\[\s*(\d+(?:\s*,\s*\d+)*)\s*\]$/);
+      const match = part.match(/^\[\s*(\d+(?:\s*,\s*\d+)*)\s*\](?:\(([^)]*)\))?$/);
       if (match) {
         const nums = match[1]
           .split(",")
           .map((n) => parseInt(n.trim(), 10))
           .filter((n) => !isNaN(n));
+        const inlineUrl = match[2]?.trim();
 
         return (
           <span key={`cite-grp-${pIdx}-${idx}`} className={styles.citationGroup}>
             {nums.map((num) => {
               const src = sources.find((s) => s.num === num);
-              const targetUrl = src?.url || `#source-${num}`;
+              const targetUrl = src?.url || inlineUrl || `#source-${num}`;
               return (
                 <a
                   key={`cite-${num}`}
@@ -255,7 +308,7 @@ function FormattedProse({
                   className={styles.citationPill}
                   title={src ? `${src.name}\n${src.url}` : `Citation [${num}]`}
                   onClick={(e) => {
-                    if (!src?.url) {
+                    if (!src?.url && !inlineUrl) {
                       e.preventDefault();
                       document
                         .getElementById(`source-${num}`)
@@ -281,6 +334,16 @@ function FormattedProse({
   return (
     <div>
       {paragraphs.map((p, pIdx) => {
+        const isHeading = /^#{1,4}\s+/.test(p);
+        if (isHeading) {
+          const headingText = p.replace(/^#{1,4}\s+/, "");
+          return (
+            <h4 key={pIdx} className={styles.proseHeading}>
+              {renderSegment(headingText, pIdx)}
+            </h4>
+          );
+        }
+
         const isBullet = /^[*•-]\s+/.test(p);
         const cleanP = isBullet ? p.replace(/^[*•-]\s+/, "") : p;
         if (isBullet) {
@@ -325,15 +388,47 @@ function AssistantTextCard({ msg }: { msg: ChatMessage }) {
               <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
             </svg>
-            <span className={styles.sourcesTitle}>Sources</span>
+            <span className={styles.sourcesTitle}>Sources &amp; References</span>
             <span className={styles.sourcesCount}>{sources.length}</span>
           </div>
 
           <div className={styles.sourcesGrid}>
             {sources.map((src) => {
-              const isPubMed = src.url.toLowerCase().includes("pubmed.ncbi.nlm.nih.gov");
-              const isPubChem = src.url.toLowerCase().includes("pubchem.ncbi.nlm.nih.gov");
-              const badgeLabel = isPubMed ? "PubMed" : isPubChem ? "PubChem" : "Literature";
+              const lower = (src.url || "").toLowerCase();
+              const isPubMed = lower.includes("pubmed.ncbi.nlm.nih.gov");
+              const isPubChem = lower.includes("pubchem.ncbi.nlm.nih.gov");
+              const isDailyMed = lower.includes("dailymed.nlm.nih.gov");
+              const isFDA = lower.includes("fda.gov");
+              const isChEMBL = lower.includes("chembl");
+              const isClinicalTrials = lower.includes("clinicaltrials.gov");
+
+              const badgeClass = isPubMed
+                ? styles.badgePubMed
+                : isPubChem
+                ? styles.badgePubChem
+                : isDailyMed
+                ? styles.badgeDailyMed
+                : isFDA
+                ? styles.badgeFDA
+                : isChEMBL
+                ? styles.badgeChEMBL
+                : isClinicalTrials
+                ? styles.badgeClinicalTrials
+                : styles.badgeDefault;
+
+              const badgeLabel = isPubMed
+                ? "PubMed"
+                : isPubChem
+                ? "PubChem"
+                : isDailyMed
+                ? "DailyMed"
+                : isFDA
+                ? "FDA"
+                : isChEMBL
+                ? "ChEMBL"
+                : isClinicalTrials
+                ? "ClinicalTrials"
+                : "Literature";
 
               return (
                 <a
@@ -348,15 +443,7 @@ function AssistantTextCard({ msg }: { msg: ChatMessage }) {
                   <span className={styles.sourceNum}>{src.num}</span>
                   <div className={styles.sourceInfo}>
                     <div className={styles.sourceMeta}>
-                      <span
-                        className={
-                          isPubMed
-                            ? styles.badgePubMed
-                            : isPubChem
-                            ? styles.badgePubChem
-                            : styles.badgeDefault
-                        }
-                      >
+                      <span className={badgeClass}>
                         {badgeLabel}
                       </span>
                       <span className={styles.sourceName}>{src.name}</span>

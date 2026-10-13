@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import type { DrugInfo, FieldValue, Citation } from "@/lib/types";
 import StructureViewer from "./StructureViewer";
 import CitationBadge from "./CitationBadge";
 import CitationModal from "./CitationModal";
 import styles from "./DrugInfoCard.module.css";
 
-type Tab = "overview" | "pharmacodynamics" | "pharmacokinetics" | "safety" | "history";
+type Tab = "overview" | "pharmacodynamics" | "pharmacokinetics" | "safety" | "history" | "resources";
 
 interface Props {
   data: DrugInfo;
@@ -17,32 +17,33 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "pharmacokinetics",  label: "Pharmacokinetics" },
   { id: "safety",            label: "Safety" },
   { id: "history",           label: "Evidence" },
+  { id: "resources",         label: "Resources" },
 ];
 
 const MISSING_MESSAGES: { [key: string]: string } = {
-  indications: "No indication evidence was retrieved for this field.",
-  contraindications: "No contraindication evidence was retrieved for this field.",
-  adverse_effects: "No adverse-effect evidence was retrieved for this field.",
-  drug_interactions: "No interaction evidence was retrieved for this field.",
-  mechanism_of_action: "No mechanism evidence was retrieved for this field.",
-  physiologic_effect: "No physiologic-effect evidence was retrieved for this field.",
-  binding_affinity: "No binding-affinity evidence was retrieved. This does not mean no measurements exist in the literature.",
-  selectivity: "No selectivity evidence was retrieved for this field.",
-  potency: "No potency evidence was retrieved. This does not mean no measurements exist in the literature.",
-  efficacy: "No efficacy evidence was retrieved for this field.",
-  absorption: "No absorption evidence was retrieved for this field.",
-  distribution: "No distribution evidence was retrieved for this field.",
-  metabolism: "No metabolism evidence was retrieved for this field.",
-  excretion: "No excretion evidence was retrieved for this field.",
-  acute_toxicity: "No acute-toxicity evidence was retrieved for this field.",
-  cytotoxicity: "No cytotoxicity evidence was retrieved for this field.",
-  genetic_toxicology: "No genetic-toxicology evidence was retrieved for this field.",
-  hazard_classifications: "No hazard-classification evidence was retrieved for this field.",
-  background: "No background evidence was retrieved for this field.",
-  discovery: "No discovery evidence was retrieved for this field.",
-  development: "No development evidence was retrieved for this field.",
-  clinical_trials: "No trial evidence was retrieved for this field.",
-  classification: "No classification evidence was retrieved for this field."
+  indications: "No indication details retrieved from current indexed sources.",
+  contraindications: "No contraindication details retrieved from current indexed sources.",
+  adverse_effects: "No adverse-effect details retrieved from current indexed sources.",
+  drug_interactions: "No interaction details retrieved from current indexed sources.",
+  mechanism_of_action: "No mechanism details retrieved from current indexed sources.",
+  physiologic_effect: "No physiologic-effect details retrieved from current indexed sources.",
+  binding_affinity: "No binding-affinity data retrieved from current indexed sources.",
+  selectivity: "No selectivity data retrieved from current indexed sources.",
+  potency: "No potency data retrieved from current indexed sources.",
+  efficacy: "No efficacy details retrieved from current indexed sources.",
+  absorption: "No absorption details retrieved from current indexed sources.",
+  distribution: "No distribution details retrieved from current indexed sources.",
+  metabolism: "No metabolism details retrieved from current indexed sources.",
+  excretion: "No excretion details retrieved from current indexed sources.",
+  acute_toxicity: "No acute-toxicity data retrieved from current indexed sources.",
+  cytotoxicity: "No cytotoxicity data retrieved from current indexed sources.",
+  genetic_toxicology: "No genetic-toxicology data retrieved from current indexed sources.",
+  hazard_classifications: "No hazard-classification data retrieved from current indexed sources.",
+  background: "No background details retrieved from current indexed sources.",
+  discovery: "No discovery details retrieved from current indexed sources.",
+  development: "No development details retrieved from current indexed sources.",
+  clinical_trials: "No clinical trial data retrieved from current indexed sources.",
+  classification: "No classification details retrieved from current indexed sources."
 };
 
 function formatChemicalFormula(formula: string): string {
@@ -74,8 +75,7 @@ function InfoBlock({
 }) {
   const [expanded, setExpanded] = useState(true);
   const isMissing = !field || field.missing || !field.content;
-  const sources = field?.sources || [];
-  const missingText = MISSING_MESSAGES[slug] || "No clinical details found in current ingested sources.";
+  const missingText = MISSING_MESSAGES[slug] || "No data retrieved from current indexed sources.";
 
   return (
     <div
@@ -91,8 +91,17 @@ function InfoBlock({
         <span className={styles.infoBlockLabel}>{label}</span>
         <span className={styles.infoBlockRight}>
           {isMissing && (
-            <span className={`badge badge-amber ${styles.missingBadge}`}>
-              Not retrieved
+            <span
+              className={`badge ${styles.missingBadge}`}
+              style={{
+                background: "#f8fafc",
+                color: "#64748b",
+                border: "1px solid #cbd5e1",
+                fontSize: "0.72rem",
+                fontWeight: 600,
+              }}
+            >
+              ⚪ Not Found in Current Sources
             </span>
           )}
           <svg
@@ -131,7 +140,6 @@ function InfoBlock({
               )}
             </div>
           )}
-          {sources.length > 0 && <CitationBadge citations={sources} onSelectCitation={onSelectCitation} />}
         </div>
       )}
     </div>
@@ -147,11 +155,141 @@ function safeField(f: FieldValue | undefined | null): FieldValue {
   return f ?? MISSING;
 }
 
+interface UnifiedCitationItem {
+  id: string;
+  num: number;
+  citation: Citation;
+  tag: string;
+  title: string;
+  url?: string;
+  sections: string[];
+}
+
+function getUnifiedCitations(data: DrugInfo): UnifiedCitationItem[] {
+  const map = new Map<string, { citation: Citation; sections: Set<string> }>();
+
+  const register = (citations: Citation[] | undefined, sectionName: string) => {
+    if (!citations || !Array.isArray(citations)) return;
+    for (const c of citations) {
+      if (!c) continue;
+      const key = (c.url || c.source || "").trim();
+      if (!key) continue;
+      if (!map.has(key)) {
+        map.set(key, { citation: c, sections: new Set() });
+      }
+      if (sectionName) {
+        map.get(key)!.sections.add(sectionName);
+      }
+    }
+  };
+
+  register(data.drug_name?.sources, "Drug Identity");
+
+  if (data.pharmacodynamics) {
+    register(data.pharmacodynamics.mechanism_of_action?.sources, "Mechanism of Action");
+    register(data.pharmacodynamics.physiologic_effect?.sources, "Physiologic Effect");
+    register(data.pharmacodynamics.binding_affinity?.sources, "Binding Affinity");
+    register(data.pharmacodynamics.selectivity?.sources, "Selectivity");
+    register(data.pharmacodynamics.potency?.sources, "Potency");
+    register(data.pharmacodynamics.efficacy?.sources, "Efficacy");
+  }
+
+  if (data.adme) {
+    register(data.adme.absorption?.sources, "Absorption");
+    register(data.adme.distribution?.sources, "Distribution");
+    register(data.adme.metabolism?.sources, "Metabolism");
+    register(data.adme.excretion?.sources, "Excretion");
+  }
+
+  if (data.therapeutic_profile) {
+    register(data.therapeutic_profile.indications?.sources, "Indications");
+    register(data.therapeutic_profile.contraindications?.sources, "Contraindications");
+    register(data.therapeutic_profile.adverse_effects?.sources, "Adverse Effects");
+    register(data.therapeutic_profile.drug_interactions?.sources, "Interactions");
+  }
+
+  if (data.toxicology) {
+    register(data.toxicology.acute_toxicity?.sources, "Acute Toxicity");
+    register(data.toxicology.cytotoxicity?.sources, "Cytotoxicity");
+    register(data.toxicology.genetic_toxicology?.sources, "Genetic Toxicology");
+    register(data.toxicology.hazard_classifications?.sources, "Hazard Classifications");
+  }
+
+  if (data.history) {
+    register(data.history.background?.sources, "Background");
+    register(data.history.discovery?.sources, "Discovery");
+    register(data.history.development?.sources, "Development");
+    register(data.history.clinical_trials?.sources, "Clinical Trials");
+  }
+
+  let index = 1;
+  const items: UnifiedCitationItem[] = [];
+  for (const [key, { citation, sections }] of map.entries()) {
+    const rawUrl = citation.url || "";
+    const lower = (rawUrl + " " + (citation.source || "")).toLowerCase();
+    let tag = "Literature";
+    let computedUrl = citation.url;
+
+    if (lower.includes("dailymed")) {
+      tag = "DailyMed";
+      if (!computedUrl && data.drug_name.generic) {
+        computedUrl = `https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(data.drug_name.generic)}`;
+      }
+    } else if (lower.includes("fda.gov") || lower.includes("openfda")) {
+      tag = "openFDA";
+    } else if (lower.includes("pubmed") || citation.pmid || lower.includes("pmid")) {
+      tag = "PubMed";
+      const pmidMatch = citation.pmid
+        ? String(citation.pmid)
+        : (citation.source || "").match(/PMID\s*(\d+)/i)?.[1];
+      if (!computedUrl && pmidMatch) {
+        computedUrl = `https://pubmed.ncbi.nlm.nih.gov/${pmidMatch}/`;
+      }
+    } else if (lower.includes("pubchem")) {
+      tag = "PubChem";
+      if (!computedUrl && data.chemical_structure.pubchem_cid) {
+        computedUrl = `https://pubchem.ncbi.nlm.nih.gov/compound/${data.chemical_structure.pubchem_cid}`;
+      }
+    } else if (lower.includes("clinicaltrials") || lower.includes("nct")) {
+      tag = "ClinicalTrials";
+      const nctMatch = (citation.source || "").match(/(NCT\d+)/i)?.[1];
+      if (!computedUrl && nctMatch) {
+        computedUrl = `https://clinicaltrials.gov/study/${nctMatch}`;
+      }
+    } else if (lower.includes("chembl")) {
+      tag = "ChEMBL";
+    }
+
+    let title = (citation.source || key).trim();
+    title = title.replace(/^PUG View\s*/i, "").trim();
+
+    items.push({
+      id: `cite-${index}`,
+      num: index,
+      citation,
+      tag,
+      title,
+      url: computedUrl,
+      sections: Array.from(sections),
+    });
+    index++;
+  }
+
+  return items;
+}
+
 // ── Main card ─────────────────────────────────────────────────────────────────
 
 export default function DrugInfoCard({ data }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
+  const [resourceFilter, setResourceFilter] = useState<string>("all");
+  const unifiedSources = useMemo(() => getUnifiedCitations(data), [data]);
+
+  const filteredSources = useMemo(() => {
+    if (resourceFilter === "all") return unifiedSources;
+    return unifiedSources.filter((s) => s.tag === resourceFilter);
+  }, [unifiedSources, resourceFilter]);
 
   const brandList = (data.drug_name.brand_names ?? []).join(", ");
   const labCodes  = (data.drug_name.lab_codes ?? []).join(", ");
@@ -222,19 +360,17 @@ ${data.pharmacodynamics.mechanism_of_action.content || "Data unavailable"}
         </div>
 
         <div className={styles.headerRight}>
-          <div className={styles.smilesChip}>
-            <span className={styles.smilesChipLabel}>SMILES</span>
-            <code className={styles.smilesCode}>{data.query_smiles}</code>
-          </div>
-          <button
-            type="button"
-            className={styles.exportBtn}
-            onClick={handleExportMonograph}
-            title="Download structured Markdown monograph report"
-          >
-            📥 Export Monograph
-          </button>
-          <CitationBadge citations={data.drug_name.sources} onSelectCitation={setActiveCitation} />
+          {data.query_smiles ? (
+            <div className={styles.smilesChip}>
+              <span className={styles.smilesChipLabel}>SMILES</span>
+              <code className={styles.smilesCode}>{data.query_smiles}</code>
+            </div>
+          ) : (
+            <div className={styles.smilesChip}>
+              <span className={styles.smilesChipLabel}>Modality</span>
+              <code className={styles.smilesCode}>{(data.chemical_structure.drug_type || "Biologic").replace(/_/g, " ")}</code>
+            </div>
+          )}
         </div>
       </div>
 
@@ -249,7 +385,23 @@ ${data.pharmacodynamics.mechanism_of_action.content || "Data unavailable"}
             className={`${styles.tab} ${activeTab === tab.id ? styles.tabActive : ""}`}
             onClick={() => setActiveTab(tab.id)}
           >
-            {tab.label}
+            <span>{tab.label}</span>
+            {tab.id === "resources" && unifiedSources.length > 0 && (
+              <span
+                style={{
+                  marginLeft: "6px",
+                  fontSize: "0.7rem",
+                  padding: "1px 6px",
+                  borderRadius: "9999px",
+                  background: activeTab === "resources" ? "rgba(0, 82, 255, 0.12)" : "#f1f5f9",
+                  color: activeTab === "resources" ? "#0052ff" : "#64748b",
+                  fontWeight: 700,
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {unifiedSources.length}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -265,6 +417,32 @@ ${data.pharmacodynamics.mechanism_of_action.content || "Data unavailable"}
               <SectionLabel>Drug Identity</SectionLabel>
               <table className={styles.metaTable}>
                 <tbody>
+                  {data.chemical_structure.drug_type && (
+                    <tr>
+                      <td className={styles.metaTableLabel}>Modality</td>
+                      <td className={styles.metaTableValue}>
+                        <strong style={{ textTransform: "capitalize" }}>
+                          {data.chemical_structure.drug_type.replace(/_/g, " ")}
+                        </strong>
+                      </td>
+                    </tr>
+                  )}
+                  {data.chemical_structure.biologic_class && (
+                    <tr>
+                      <td className={styles.metaTableLabel}>Biologic Class</td>
+                      <td className={styles.metaTableValue}>
+                        <strong>{data.chemical_structure.biologic_class}</strong>
+                      </td>
+                    </tr>
+                  )}
+                  {data.chemical_structure.target && (
+                    <tr>
+                      <td className={styles.metaTableLabel}>Primary Target</td>
+                      <td className={styles.metaTableValue}>
+                        <strong>{data.chemical_structure.target}</strong>
+                      </td>
+                    </tr>
+                  )}
                   {data.chemical_structure.molecular_formula && (
                     <tr>
                       <td className={styles.metaTableLabel}>Formula</td>
@@ -322,7 +500,11 @@ ${data.pharmacodynamics.mechanism_of_action.content || "Data unavailable"}
             <div className={styles.divider} />
 
             <section className={styles.section}>
-              <SectionLabel>Molecular Structure</SectionLabel>
+              <SectionLabel>
+                {data.chemical_structure.drug_type === "biologic"
+                  ? "Biologic & Molecular Profile"
+                  : "Molecular Structure"}
+              </SectionLabel>
               <StructureViewer structure={data.chemical_structure} />
             </section>
 
@@ -390,6 +572,7 @@ ${data.pharmacodynamics.mechanism_of_action.content || "Data unavailable"}
               </div>
             </section>
 
+
           </div>
         )}
 
@@ -426,6 +609,47 @@ ${data.pharmacodynamics.mechanism_of_action.content || "Data unavailable"}
                 accentColor="teal"
               />
             </div>
+
+            {data.adme.cyp_profile && (
+              <>
+                <div className={styles.divider} />
+                <section className={styles.section}>
+                  <SectionLabel>Cytochrome P450 (CYP) Metabolism Profile</SectionLabel>
+                  <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", padding: "14px 18px", background: "var(--bg-elevated)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)" }}>
+                    {data.adme.cyp_profile.substrates.length > 0 && (
+                      <div style={{ minWidth: "140px" }}>
+                        <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "block", marginBottom: "6px", fontWeight: 700 }}>SUBSTRATE FOR</span>
+                        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                          {data.adme.cyp_profile.substrates.map((c, i) => (
+                            <span key={i} className="badge badge-accent">{c}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {data.adme.cyp_profile.inhibitors.length > 0 && (
+                      <div style={{ minWidth: "140px" }}>
+                        <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "block", marginBottom: "6px", fontWeight: 700 }}>INHIBITS</span>
+                        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                          {data.adme.cyp_profile.inhibitors.map((c, i) => (
+                            <span key={i} className="badge badge-rose">{c}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {data.adme.cyp_profile.inducers.length > 0 && (
+                      <div style={{ minWidth: "140px" }}>
+                        <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "block", marginBottom: "6px", fontWeight: 700 }}>INDUCES</span>
+                        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                          {data.adme.cyp_profile.inducers.map((c, i) => (
+                            <span key={i} className="badge badge-amber">{c}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </>
+            )}
 
           </div>
         )}
@@ -578,6 +802,254 @@ ${data.pharmacodynamics.mechanism_of_action.content || "Data unavailable"}
           </div>
         )}
 
+        {/* ── RESOURCES (NEW DEDICATED TAB) ── */}
+        {activeTab === "resources" && (
+          <div className={styles.tabPanel} role="tabpanel" aria-labelledby="tab-resources">
+            <p className={styles.tabDescription}>
+              Verified external database portals, peer-reviewed biomedical literature, FDA package inserts, and clinical registries consulted for {data.drug_name.generic}.
+            </p>
+
+            {/* Authoritative Database Portals (Quick Links) */}
+            <section className={styles.section}>
+              <SectionLabel>Authoritative Database Portals</SectionLabel>
+              <div className={styles.quickLinksGrid}>
+                {data.chemical_structure.pubchem_cid && (
+                  <a
+                    href={`https://pubchem.ncbi.nlm.nih.gov/compound/${data.chemical_structure.pubchem_cid}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.quickLinkCard}
+                  >
+                    <div className={styles.quickLinkIconWrap}>
+                      🧬
+                    </div>
+                    <div className={styles.quickLinkText}>
+                      <span className={styles.quickLinkTitle}>PubChem Compound</span>
+                      <span className={styles.quickLinkSub}>CID: {data.chemical_structure.pubchem_cid}</span>
+                    </div>
+                    <svg className={styles.quickLinkExtIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                  </a>
+                )}
+
+                <a
+                  href={`https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(data.drug_name.generic)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.quickLinkCard}
+                >
+                  <div className={styles.quickLinkIconWrap}>
+                    📋
+                  </div>
+                  <div className={styles.quickLinkText}>
+                    <span className={styles.quickLinkTitle}>NIH DailyMed (FDA SPL)</span>
+                    <span className={styles.quickLinkSub}>Official prescribing monograph</span>
+                  </div>
+                  <svg className={styles.quickLinkExtIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </a>
+
+                <a
+                  href={`https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(data.drug_name.generic)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.quickLinkCard}
+                >
+                  <div className={styles.quickLinkIconWrap}>
+                    📚
+                  </div>
+                  <div className={styles.quickLinkText}>
+                    <span className={styles.quickLinkTitle}>PubMed Central (NCBI)</span>
+                    <span className={styles.quickLinkSub}>Biomedical journal articles</span>
+                  </div>
+                  <svg className={styles.quickLinkExtIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </a>
+
+                <a
+                  href={`https://clinicaltrials.gov/search?term=${encodeURIComponent(data.drug_name.generic)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.quickLinkCard}
+                >
+                  <div className={styles.quickLinkIconWrap}>
+                    🏥
+                  </div>
+                  <div className={styles.quickLinkText}>
+                    <span className={styles.quickLinkTitle}>ClinicalTrials.gov</span>
+                    <span className={styles.quickLinkSub}>Study protocols & registry</span>
+                  </div>
+                  <svg className={styles.quickLinkExtIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </a>
+
+                <a
+                  href={`https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&searchTerm=${encodeURIComponent(data.drug_name.generic)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.quickLinkCard}
+                >
+                  <div className={styles.quickLinkIconWrap}>
+                    🏛️
+                  </div>
+                  <div className={styles.quickLinkText}>
+                    <span className={styles.quickLinkTitle}>Drugs@FDA (CDER)</span>
+                    <span className={styles.quickLinkSub}>Regulatory approval history</span>
+                  </div>
+                  <svg className={styles.quickLinkExtIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </a>
+              </div>
+            </section>
+
+            <div className={styles.divider} />
+
+            {/* Consulted Citations & Evidence List */}
+            <section className={styles.section}>
+              <div className={styles.resourcesSectionHeader}>
+                <div>
+                  <SectionLabel>Consulted Evidence &amp; Specific Citations</SectionLabel>
+                  <p className={styles.resourcesSectionDesc}>
+                    {unifiedSources.length} literature and database documents directly ingested for this profile.
+                  </p>
+                </div>
+
+                {/* Filter Pills */}
+                {unifiedSources.length > 0 && (
+                  <div className={styles.filterPillsRow}>
+                    {["all", "PubMed", "DailyMed", "PubChem", "ClinicalTrials"].map((f) => {
+                      const count = f === "all"
+                        ? unifiedSources.length
+                        : unifiedSources.filter((s) => s.tag === f).length;
+                      if (f !== "all" && count === 0) return null;
+                      return (
+                        <button
+                          key={f}
+                          type="button"
+                          className={`${styles.filterPill} ${resourceFilter === f ? styles.filterPillActive : ""}`}
+                          onClick={() => setResourceFilter(f)}
+                        >
+                          {f === "all" ? "All Sources" : f} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {filteredSources.length > 0 ? (
+                <div className={styles.resourcesGrid}>
+                  {filteredSources.map((item) => (
+                    <div
+                      key={item.id}
+                      className={styles.resourceCard}
+                      onClick={() => {
+                        if (item.citation.text) {
+                          setActiveCitation(item.citation);
+                        } else if (item.url) {
+                          window.open(item.url, "_blank", "noopener,noreferrer");
+                        }
+                      }}
+                      title={item.citation.text ? "Click to view retrieved passage excerpt" : item.url || item.title}
+                    >
+                      <div className={styles.resourceCardHeader}>
+                        <span className={styles.resourceIndex}>#{item.num}</span>
+                        {item.url && (
+                          <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={styles.resourceCardExtLink}
+                            onClick={(e) => e.stopPropagation()}
+                            title="Open external URL in new tab"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                              <polyline points="15 3 21 3 21 9" />
+                              <line x1="10" y1="14" x2="21" y2="3" />
+                            </svg>
+                          </a>
+                        )}
+                      </div>
+
+                      <h4 className={styles.resourceCardTitle} title={item.title}>
+                        {item.title}
+                      </h4>
+
+                      {item.sections.length > 0 && (
+                        <div className={styles.resourceCardSections}>
+                          <span className={styles.resourceCardSectionsLabel}>Referenced in:</span>
+                          <div className={styles.resourceCardSectionTags}>
+                            {item.sections.map((sec, idx) => (
+                              <span key={idx} className={styles.resourceSectionPill}>
+                                {sec}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className={styles.resourceCardActions}>
+                        {item.citation.text ? (
+                          <button
+                            type="button"
+                            className={styles.resourceCardExcerptBtn}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveCitation(item.citation);
+                            }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                            </svg>
+                            View Retrieved Excerpt
+                          </button>
+                        ) : (
+                          <span className={styles.resourceCardNoExcerpt}>Database Record</span>
+                        )}
+
+                        {item.url && (
+                          <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={styles.resourceCardVisitBtn}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Visit Database ↗
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles.emptyResourcesBox}>
+                  <p className={styles.emptyResourcesText}>
+                    No specific literature or regulatory records match this filter.
+                  </p>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+
       </div>
 
       {/* ── Disclaimer ── */}
@@ -594,7 +1066,21 @@ ${data.pharmacodynamics.mechanism_of_action.content || "Data unavailable"}
         <span className={styles.footerText}>
           Generated {new Date(data.generated_at).toLocaleString()}
         </span>
-        <span className="badge badge-teal">Pharmer</span>
+        <span
+          role="button"
+          tabIndex={0}
+          className={styles.footerExportLink}
+          onClick={handleExportMonograph}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleExportMonograph();
+            }
+          }}
+          id="footer-export-monograph"
+        >
+          Export Monograph
+        </span>
       </div>
 
       <CitationModal citation={activeCitation} onClose={() => setActiveCitation(null)} />

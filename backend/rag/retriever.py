@@ -73,14 +73,20 @@ class Retriever:
     def chunk_count(self) -> int:
         return self.collection.count()
 
-    def get_drug_chunk_count(self, pubchem_cid: str) -> int:
-        """Return the number of chunks stored for a specific drug CID."""
-        if not pubchem_cid:
+    def get_drug_chunk_count(self, identifier: str) -> int:
+        """Return the number of chunks stored for a specific drug CID or drug name."""
+        if not identifier:
             return 0
-        results = self.collection.get(
-            where={"pubchem_cid": pubchem_cid},
-            include=[],
-        )
+        if identifier.isdigit():
+            results = self.collection.get(
+                where={"pubchem_cid": identifier},
+                include=[],
+            )
+        else:
+            results = self.collection.get(
+                where={"drug": identifier.strip().casefold()},
+                include=[],
+            )
         return len(results["ids"])
 
     async def retrieve(
@@ -117,10 +123,11 @@ class Retriever:
         # Combine drug identity and source-field filters so a section can
         # directly search the matching DailyMed/PubMed categories.
         filters: list[dict] = []
-        if pubchem_cid:
+        if pubchem_cid and pubchem_cid.isdigit():
             filters.append({"pubchem_cid": pubchem_cid})
-        elif drug_name:
-            filters.append({"drug": drug_name.strip().casefold()})
+        elif drug_name or pubchem_cid:
+            name_val = drug_name or pubchem_cid
+            filters.append({"drug": name_val.strip().casefold()})
         if fields:
             filters.append({"field": {"$in": fields}})
         where = filters[0] if len(filters) == 1 else ({"$and": filters} if filters else None)

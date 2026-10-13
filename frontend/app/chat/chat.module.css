@@ -573,13 +573,14 @@
   resize: none;
   font-size: 0.98rem;
   color: #111827;
-  font-family: inherit;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   line-height: 1.5;
   min-height: 52px;
 }
 
 .promptTextarea::placeholder {
   color: #9ca3af;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 .promptToolbar {
@@ -694,14 +695,28 @@
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: #cbd5e1;
-  color: #ffffff;
+  background: #0052ff !important;
+  color: #ffffff !important;
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 120ms ease;
+  box-shadow: 0 1px 3px rgba(0, 82, 255, 0.25);
+}
+
+.sendBtn:hover:not(:disabled) {
+  background: #0045d8 !important;
+  transform: scale(1.06);
+}
+
+.sendBtn:disabled {
+  background: #93c5fd !important;
+  color: #ffffff !important;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 .sendBtnActive {
@@ -711,7 +726,7 @@
 
 .sendBtnActive:hover {
   background: #0045d8;
-  transform: scale(1.05);
+  transform: scale(1.06);
 }
 
 /* ─── "Build your task" Section ─── */
@@ -814,7 +829,7 @@
 }
 
 .chatInputBottomBar {
-  padding: 12px 24px 18px;
+  padding: 8px 24px 12px;
   background: #ffffff;
   border-top: 1px solid #f1f5f9;
   display: flex;
@@ -824,6 +839,33 @@
 .chatInputWrapper {
   max-width: 860px;
   width: 100%;
+}
+
+.chatInputWrapper .promptBox {
+  padding: 10px 14px 8px;
+  gap: 6px;
+  border-radius: 12px;
+}
+
+.chatInputWrapper .promptTextarea {
+  min-height: 24px;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.chatInputWrapper .promptToolbar {
+  padding-top: 4px;
+}
+
+.chatInputWrapper .toolsBtn {
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  border-radius: 6px;
+}
+
+.chatInputWrapper .sendBtn {
+  width: 30px;
+  height: 30px;
 }
 
 /* ─── Floating Support Button ─── */

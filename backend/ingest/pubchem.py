@@ -310,6 +310,136 @@ async def get_rxnorm_name_correction(name: str) -> str | None:
     return str(preferred["name"]).strip() if preferred else None
 
 
+async def resolve_biologic_or_non_pubchem_drug(query: str) -> dict | None:
+    """
+    Resolve brand names and biologics (e.g. Humira -> adalimumab) via RxNorm and DailyMed
+    when PubChem small-molecule lookup returns 404 Not Found.
+    """
+    require_network_allowed("RxNorm/DailyMed biologic entity lookup")
+    clean_query = query.strip()
+    if not clean_query or len(clean_query) < 3:
+        return None
+
+    # 1. Query RxNorm approximateTerm to find RxCUI and concept name
+    rx_url = "https://rxnav.nlm.nih.gov/REST/approximateTerm.json"
+    candidates = []
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(rx_url, params={"term": clean_query, "maxEntries": 10})
+            if resp.status_code == 200:
+                candidates = resp.json().get("approximateGroup", {}).get("candidate", [])
+    except Exception as e:
+        pass
+
+    generic_name = None
+    brand_name = None
+    top_cui = None
+
+    if candidates:
+        top_cui = candidates[0].get("rxcui")
+        cand_name = (candidates[0].get("name") or clean_query).strip()
+
+        # Check if candidate has active ingredient (tty=IN)
+        if top_cui:
+            try:
+                in_url = f"https://rxnav.nlm.nih.gov/REST/rxcui/{top_cui}/related.json"
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp_in = await client.get(in_url, params={"tty": "IN"})
+                    if resp_in.status_code == 200:
+                        groups = resp_in.json().get("relatedGroup", {}).get("conceptGroup", [])
+                        for g in groups:
+                            if g.get("tty") == "IN":
+                                props_in = g.get("conceptProperties", [])
+                                if props_in and props_in[0].get("name"):
+                                    generic_name = props_in[0]["name"].strip()
+                                    if cand_name.lower() != generic_name.lower():
+                                        brand_name = cand_name
+                                    break
+            except Exception:
+                pass
+
+        if not generic_name:
+            generic_name = cand_name
+
+    # 2. Fallback check DailyMed if RxNorm didn't resolve generic
+    if not generic_name:
+        try:
+            from ingest.dailymed import search_drug_labels
+            labels = await search_drug_labels(clean_query, pagesize=3)
+            if labels:
+                generic_name = clean_query
+                brand_name = labels[0].get("title", "").split()[0]
+        except Exception:
+            pass
+
+    if not generic_name:
+        return None
+
+    # 3. Determine biologic classification
+    lower_gen = generic_name.lower()
+    biologic_class = "Biologic / Macromolecular Drug"
+    if lower_gen.endswith("mab"):
+        biologic_class = "Monoclonal Antibody (mAb)"
+    elif lower_gen.endswith("cept"):
+        biologic_class = "Receptor Fusion Protein"
+    elif lower_gen.endswith("tide"):
+        biologic_class = "Peptide / Receptor Agonist"
+    elif "insulin" in lower_gen:
+        biologic_class = "Insulin Analog / Hormone"
+    elif lower_gen.endswith("ase"):
+        biologic_class = "Recombinant Enzyme"
+    elif "vaccine" in lower_gen:
+        biologic_class = "Vaccine / Immunobiological"
+
+    # Known target mapping for major biologics
+    target = None
+    if any(k in lower_gen for k in ["adalimumab", "infliximab", "etanercept", "golimumab", "certolizumab"]):
+        target = "Tumor Necrosis Factor alpha (TNF-alpha)"
+    elif any(k in lower_gen for k in ["pembrolizumab", "nivolumab", "cemiplimab"]):
+        target = "Programmed Cell Death Protein 1 (PD-1)"
+    elif any(k in lower_gen for k in ["trastuzumab", "pertuzumab"]):
+        target = "Human Epidermal Growth Factor Receptor 2 (HER2)"
+    elif "rituximab" in lower_gen:
+        target = "CD20 B-lymphocyte antigen"
+    elif any(k in lower_gen for k in ["semaglutide", "liraglutide", "tirzepatide", "dulaglutide"]):
+        target = "Glucagon-Like Peptide-1 Receptor (GLP-1R)"
+    elif "dupixent" in lower_gen or "dupilumab" in lower_gen:
+        target = "Interleukin-4 Receptor alpha (IL-4R-alpha)"
+    elif "ustekinumab" in lower_gen:
+        target = "Interleukin-12 and Interleukin-23 (IL-12 / IL-23)"
+
+    synonyms = list(dict.fromkeys(filter(None, [generic_name, brand_name, clean_query])))
+
+    sources = []
+    if top_cui:
+        sources.append({
+            "source": f"RxNorm Concept {top_cui}",
+            "url": f"https://mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm={top_cui}",
+        })
+    sources.append({
+        "source": "DailyMed FDA Library",
+        "url": f"https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query={urllib.parse.quote(generic_name)}",
+    })
+
+    return {
+        "smiles": None,
+        "drug_type": "biologic",
+        "biologic_class": biologic_class,
+        "target": target,
+        "inchi": None,
+        "inchi_key": None,
+        "iupac_name": None,
+        "common_name": generic_name,
+        "brand_names": [brand_name] if brand_name else [],
+        "synonyms": synonyms,
+        "molecular_formula": None,
+        "molecular_weight": None,
+        "pubchem_cid": None,
+        "image_url": None,
+        "sources": sources,
+    }
+
+
 async def get_compound_by_cid(cid: int) -> dict | None:
     require_network_allowed("PubChem CID lookup")
     """
@@ -337,11 +467,7 @@ async def enrich_structure(query: str) -> dict:
       1. CID (if query is purely numeric)
       2. SMILES
       3. Drug Name (as a fallback)
-
-    Fetches synonyms so the query builder can use the common name (e.g. "Aspirin").
-    If lookup resolves to an isotope/derivative entry (e.g. [14C]metformin),
-    cross-checks against common_name via PubChem name resolution to obtain the
-    parent compound CID (e.g. CID 4091).
+      4. RxNorm / DailyMed for biologics and brand names (when PubChem returns 404)
     """
     query = query.strip()
     props = None
@@ -358,21 +484,25 @@ async def enrich_structure(query: str) -> dict:
     if not props:
         props = await get_compound_by_name(query)
 
-    # Drug-name typos otherwise pass through as if they were resolved compounds,
-    # causing all CID-filtered evidence retrieval to miss. RxNorm supplies a
-    # candidate, but PubChem must independently resolve it before we accept it.
+    # Drug-name typos otherwise pass through as if they were resolved compounds
     if not props:
         corrected_name = await get_rxnorm_name_correction(query)
         if corrected_name:
             props = await get_compound_by_name(corrected_name)
 
     if not props:
+        # Fallback to multi-tier RxNorm + DailyMed resolver for biologics and non-PubChem compounds
+        biologic_entity = await resolve_biologic_or_non_pubchem_drug(query)
+        if biologic_entity:
+            return biologic_entity
+
         return {
             "smiles": query,
+            "drug_type": "unknown",
             "pubchem_cid": None,
             "iupac_name": None,
-            "common_name": None,
-            "synonyms": [],
+            "common_name": query.capitalize(),
+            "synonyms": [query],
             "image_url": None,
             "sources": [],
         }

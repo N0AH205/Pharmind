@@ -29,6 +29,8 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [inputText, setInputText] = useState("");
+  const heroTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const bottomTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
@@ -232,8 +234,8 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
             (m.smiles
               ? `Drug query: ${m.smiles}`
               : m.drugInfo
-              ? `Retrieved profile for ${m.drugInfo.drug_name.generic}; CID ${m.drugInfo.chemical_structure.pubchem_cid ?? "unknown"}.`
-              : ""),
+                ? `Retrieved profile for ${m.drugInfo.drug_name.generic}; CID ${m.drugInfo.chemical_structure.pubchem_cid ?? "unknown"}.`
+                : ""),
         }))
         .filter((m) => m.content)
         .slice(-20) as { role: "user" | "assistant"; content: string }[];
@@ -241,9 +243,9 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
       const lastDrugInfo = [...messages].reverse().find((m) => m.drugInfo)?.drugInfo;
       const activeDrug = lastDrugInfo
         ? {
-            name: lastDrugInfo.drug_name.generic,
-            cid: lastDrugInfo.chemical_structure.pubchem_cid?.toString(),
-          }
+          name: lastDrugInfo.drug_name.generic,
+          cid: lastDrugInfo.chemical_structure.pubchem_cid?.toString(),
+        }
         : { name: "" };
 
       const { sendChatMessage } = await import("@/lib/api");
@@ -268,10 +270,10 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
         prev.map((s) =>
           s.id === currentSessionId
             ? {
-                ...s,
-                updatedAt: Date.now(),
-                messages: [...s.messages, assistantMsg],
-              }
+              ...s,
+              updatedAt: Date.now(),
+              messages: [...s.messages, assistantMsg],
+            }
             : s
         )
       );
@@ -322,21 +324,31 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
     setInputText("");
   }, [loading]);
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    if (inputText.trim() && !loading) {
-      handleQuery(inputText);
+  const handleSubmit = (e?: React.SyntheticEvent) => {
+    if (e?.preventDefault) {
+      e.preventDefault();
+    }
+    if (loading) return;
+    const query = (
+      inputText ||
+      heroTextareaRef.current?.value ||
+      bottomTextareaRef.current?.value ||
+      ""
+    ).trim();
+    if (query) {
+      handleQuery(query);
       setInputText("");
+      if (heroTextareaRef.current) heroTextareaRef.current.value = "";
+      if (bottomTextareaRef.current) bottomTextareaRef.current.value = "";
+    } else {
+      (heroTextareaRef.current || bottomTextareaRef.current)?.focus();
     }
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (inputText.trim() && !loading) {
-        handleQuery(inputText);
-        setInputText("");
-      }
+      handleSubmit(e);
     }
   };
 
@@ -476,8 +488,8 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
         <div className={styles.userProfile}>
           <div className={styles.avatar}>JW</div>
           <div className={styles.userInfo}>
-            <span className={styles.userName}>Jerome Woodling</span>
-            <span className={styles.userEmail}>jeromewoodling645@gm...</span>
+            <span className={styles.userName}>Noah Stephen</span>
+            <span className={styles.userEmail}>n04hstephen@gm...</span>
           </div>
           <button type="button" className={styles.settingsBtn} title="Settings">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -537,14 +549,6 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
             <span className={styles.topbarLink}>API</span>
             <span className={styles.topbarLink}>Enterprise</span>
             <span className={styles.topbarLink}>Pricing</span>
-            <div className={styles.creditsBadge}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
-                <ellipse cx="12" cy="5" rx="9" ry="3" />
-                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-              </svg>
-              <span>100 Credits</span>
-            </div>
           </div>
         </header>
 
@@ -571,9 +575,11 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
               {/* Big Prompt Box */}
               <form onSubmit={handleSubmit} className={styles.promptBox}>
                 <textarea
+                  ref={heroTextareaRef}
                   className={styles.promptTextarea}
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
+                  onInput={(e) => setInputText((e.target as HTMLTextAreaElement).value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Give me any task to work on..."
                   rows={2}
@@ -614,12 +620,19 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
                       </svg>
                     </button>
                     <button
-                      type="submit"
-                      className={`${styles.sendBtn} ${inputText.trim() ? styles.sendBtnActive : ""}`}
-                      disabled={!inputText.trim() || loading}
+                      type="button"
+                      onClick={handleSubmit}
+                      className={styles.sendBtn}
+                      disabled={loading}
                       aria-label="Send message"
+                      title="Send message"
+                      style={{
+                        backgroundColor: "#0052ff",
+                        color: "#ffffff",
+                        cursor: loading ? "not-allowed" : "pointer",
+                      }}
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
                         <line x1="12" y1="19" x2="12" y2="5" />
                         <polyline points="5 12 12 5 19 12" />
                       </svg>
@@ -641,13 +654,16 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
               <div className={styles.chatInputWrapper}>
                 <form onSubmit={handleSubmit} className={styles.promptBox}>
                   <textarea
+                    ref={bottomTextareaRef}
                     className={styles.promptTextarea}
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
+                    onInput={(e) => setInputText((e.target as HTMLTextAreaElement).value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Ask a follow-up question, give SMILES, or request comparison..."
                     rows={1}
                     disabled={loading}
+                    aria-label="Follow-up question or drug query input"
                   />
                   <div className={styles.promptToolbar}>
                     <div className={styles.toolsMenuWrap}>
@@ -664,11 +680,19 @@ export default function ChatWorkspace({ initialQuery = "" }: Props) {
                     </div>
                     <div className={styles.toolbarRight}>
                       <button
-                        type="submit"
-                        className={`${styles.sendBtn} ${inputText.trim() ? styles.sendBtnActive : ""}`}
-                        disabled={!inputText.trim() || loading}
+                        type="button"
+                        onClick={handleSubmit}
+                        className={styles.sendBtn}
+                        disabled={loading}
+                        aria-label="Send message"
+                        title="Send message"
+                        style={{
+                          backgroundColor: "#0052ff",
+                          color: "#ffffff",
+                          cursor: loading ? "not-allowed" : "pointer",
+                        }}
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
                           <line x1="12" y1="19" x2="12" y2="5" />
                           <polyline points="5 12 12 5 19 12" />
                         </svg>

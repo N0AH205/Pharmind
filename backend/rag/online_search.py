@@ -13,48 +13,55 @@ _refresh_locks: dict[str, asyncio.Lock] = {}
 
 
 async def refresh_compound_sources(structure_data: dict, collection) -> int:
-    """Search supported source APIs and index results at most every 12 hours per CID."""
+    """Search supported source APIs and index results at most every 12 hours."""
     cid = str(structure_data.get("pubchem_cid") or "").strip()
     name = str(structure_data.get("common_name") or structure_data.get("iupac_name") or "").strip()
     smiles = str(structure_data.get("smiles") or "").strip()
-    if not cid or not cid.isdigit() or not name or not smiles:
+    if not name:
         return 0
 
-    lock = _refresh_locks.setdefault(cid, asyncio.Lock())
+    key_id = cid if (cid and cid.isdigit()) else f"name-{name.lower()}"
+    lock = _refresh_locks.setdefault(key_id, asyncio.Lock())
     async with lock:
         now = time.monotonic()
-        last_refresh = _last_refresh.get(cid)
+        last_refresh = _last_refresh.get(key_id)
         if last_refresh is not None and now - last_refresh < _REFRESH_INTERVAL_SECONDS:
             return 0
-        # Set before network work so repeated failed lookups do not hammer providers.
-        _last_refresh[cid] = now
+        _last_refresh[key_id] = now
         try:
             from ingest.run_ingest import ingest_drug
+
+            brand_names = structure_data.get("brand_names") or []
+            dailymed_candidate = brand_names[0] if brand_names else name
 
             count = await ingest_drug(
                 {
                     "name": name,
                     "smiles": smiles,
-                    "cid": int(cid),
+                    "cid": int(cid) if (cid and cid.isdigit()) else None,
                     "inchi_key": structure_data.get("inchi_key"),
+                    "dailymed_query": dailymed_candidate,
                 },
                 collection,
             )
-            logger.info("Online source refresh for %s (CID %s): %s chunks", name, cid, count)
+            logger.info("Online source refresh for %s (%s): %s chunks", name, key_id, count)
             return count
         except Exception:
-            logger.exception("Online source refresh failed for %s (CID %s)", name, cid)
+            logger.exception("Online source refresh failed for %s (%s)", name, key_id)
             return 0
 
 
 async def search_live_pubmed(compound: str | dict) -> list[dict]:
-    """Fetch a fresh, topic-balanced PubMed evidence set for this monograph."""
+    """Fetch a fresh, topic-balanced PubMed and ClinicalTrials evidence set for this monograph."""
     if isinstance(compound, dict):
         name = str(compound.get("common_name") or "").strip()
+        brand_names = compound.get("brand_names") or []
+        if isinstance(brand_names, str):
+            brand_names = [brand_names]
         raw_aliases = compound.get("synonyms") or []
         if isinstance(raw_aliases, str):
             raw_aliases = [raw_aliases]
-        aliases = [name, *(str(alias).strip() for alias in raw_aliases), str(compound.get("iupac_name") or "").strip()]
+        aliases = [name, *brand_names, *(str(alias).strip() for alias in raw_aliases), str(compound.get("iupac_name") or "").strip()]
     else:
         name = compound.strip()
         aliases = [name]
@@ -62,12 +69,11 @@ async def search_live_pubmed(compound: str | dict) -> list[dict]:
     if not aliases:
         return []
 
+    passages = []
+    # 1. PubMed live topic search
     try:
         from ingest.pubmed import fetch_abstracts, search_pubmed
 
-        # Separate queries avoid letting broad clinical/pharmacology results
-        # crowd out less common topics such as toxicology, interactions, and
-        # discovery history. Keep the originating topic for downstream ranking.
         topic_queries = [
             ("moa", "mechanism of action pharmacology molecular target"),
             ("binding_affinity", "binding affinity Ki Kd dissociation constant target assay"),
@@ -93,7 +99,6 @@ async def search_live_pubmed(compound: str | dict) -> list[dict]:
                     seen.add(pmid)
                     all_pmids.append(pmid)
 
-        passages = []
         articles = await fetch_abstracts(all_pmids)
         for topic, pmids in topic_pmids.items():
             for article in articles:
@@ -108,7 +113,7 @@ async def search_live_pubmed(compound: str | dict) -> list[dict]:
                     "retrieval_group": topic,
                     "distance": 1.0,
                     "drug": name or aliases[0],
-                    "pubchem_cid": "",
+                    "pubchem_cid": str(compound.get("pubchem_cid") or "") if isinstance(compound, dict) else "",
                     "authors": "; ".join(article.get("authors", [])),
                     "publication_date": article.get("publication_date", ""),
                     "journal": article.get("journal", ""),
@@ -116,7 +121,28 @@ async def search_live_pubmed(compound: str | dict) -> list[dict]:
                     "pmid": pmid,
                     "document_id": pmid,
                 })
-        return passages
-    except Exception:
-        logger.exception("Live PubMed monograph search failed for %s", name)
-        return []
+    except Exception as exc:
+        logger.warning("Live PubMed search failed: %s", exc)
+
+    # 2. On-demand ClinicalTrials.gov search for active Phase 3/4 trials
+    try:
+        from ingest.clinicaltrials import search_drug_trials
+        trials = await search_drug_trials(name or aliases[0], limit=4)
+        for trial in trials:
+            nct_id = trial.get("nct_id", "")
+            passages.append({
+                "text": trial.get("text", ""),
+                "source": f"ClinicalTrials.gov {nct_id}",
+                "url": trial.get("url", f"https://clinicaltrials.gov/study/{nct_id}"),
+                "field": "clinical_trials",
+                "retrieval_group": "clinical_trials",
+                "distance": 1.0,
+                "drug": name or aliases[0],
+                "pubchem_cid": str(compound.get("pubchem_cid") or "") if isinstance(compound, dict) else "",
+                "publication_date": trial.get("publication_date", ""),
+                "document_id": nct_id,
+            })
+    except Exception as exc:
+        logger.warning("ClinicalTrials.gov search failed: %s", exc)
+
+    return passages

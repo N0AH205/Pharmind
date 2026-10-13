@@ -19,6 +19,15 @@ than guessing. Treat conversation history as context for resolving references su
 'it' or 'that drug', not as a source of scientific facts. Do not give patient-specific
 diagnosis, dosing, or treatment advice.
 
+Format and Structure Guidelines:
+- Structure your answer cleanly and professionally with clear topical sections.
+- For section titles, use clean markdown headings (e.g. '### Pharmacodynamics') or clean bold lead-ins (e.g. '**Overview:**').
+- NEVER put bullet points on section headings (avoid '•**Heading:*' or '• **Heading**').
+- NEVER output raw URLs or markdown links such as '[SOURCE_1](https://...)' or '[1](https://...)'. Use ONLY plain citation brackets like '[SOURCE_1]' or '[SOURCE_1, SOURCE_2]'. Source links are rendered automatically by the UI.
+- Ensure all bold text has properly matched pairs of double asterisks ('**bold**'). Avoid broken asterisks like '**text:*'.
+- When writing bullet points, ensure there is a space after the bullet (e.g. '• Point' or '- Point').
+- Do not enclose common medical terms in unnecessary quotation marks.
+
 Active compound: {drug_name}
 Reference passages:
 {context}
@@ -43,6 +52,47 @@ def _clean_source_name(chunk: dict) -> str:
     source = re.sub(r"\bPUG View\b", "", source, flags=re.I).strip()
     source = re.sub(r"\s+", " ", source)
     return source
+
+
+def _sanitize_chat_formatting(text: str) -> str:
+    """Sanitize and normalize formatting quirks (unbalanced asterisks, bullet-headers, raw URLs)."""
+    # 1. Strip markdown link URLs attached to citations: [1](http...) -> empty, [SOURCE_1](http...) -> empty
+    text = re.sub(r"\[\s*(?:SOURCE_)?\d+(?:\s*,\s*(?:SOURCE_)?\d+)*\s*\](?:\([^)]*\))?", "", text, flags=re.I)
+    text = re.sub(r"\[\s*SOURCE_\w+\s*\](?:\([^)]*\))?", "", text, flags=re.I)
+
+    # 2. Convert bullet-heading hybrids like •**Heading:* or • **Heading:** or **Heading:* into clean markdown headings
+    def _clean_heading(m: re.Match) -> str:
+        title = m.group(1).strip().rstrip(":").rstrip("*").strip()
+        return f"\n\n### {title}\n\n"
+
+    text = re.sub(
+        r"(?:^|\n)\s*[•*-]?\s*\*\*+([^*\n]+?)(?:\*+:|\*+|\*\*|:\*)\s*(?=\n|$)",
+        _clean_heading,
+        text,
+    )
+
+    # 3. Clean trailing colons on markdown headings
+    text = re.sub(r"(?:^|\n)\s*###\s+([^\n]+?):+\s*(?=\n|$)", r"\n\n### \1\n\n", text)
+
+    # 4. Fix malformed bold headers like **Heading:* or **Heading*: -> **Heading:**
+    text = re.sub(r"\*\*([^*\n]+?)\*:", r"**\1:**", text)
+    text = re.sub(r"\*\*([^*\n]+?):\*", r"**\1:**", text)
+
+    # 5. Ensure double newlines before bullets and headings for clean paragraph separation
+    text = re.sub(r"([^\n])\n\s*([•*-]\s+)", r"\1\n\n\2", text)
+    text = re.sub(r"([^\n])\n\s*(###\s+)", r"\1\n\n\2", text)
+
+    # 6. Normalize bullets: ensure bullets have a following space
+    text = re.sub(r"(?:^|\n)\s*[•]\s*([^\s\n•])", r"\n• \1", text)
+    text = re.sub(r"(?:^|\n)\s*[-]\s+([^\s\n\-])", r"\n• \1", text)
+
+    # 7. Fix punctuation spacing from stripped citations (e.g. "stimulant ." -> "stimulant.")
+    text = re.sub(r"\s+([.,;:!?])", r"\1", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+
+    # 8. Clean trailing redundant blank lines
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 async def answer_chat_question(
@@ -137,28 +187,39 @@ async def answer_chat_question(
                 "field": chunk.get("field", ""),
             })
 
-    # 2. Replace bracketed citations [SOURCE_2, SOURCE_5] -> [1, 2]
-    def _replace_source_bracket(m: re.Match) -> str:
-        inner = m.group(1)
-        sub_sids = re.findall(r"SOURCE_(\d+)", inner, flags=re.IGNORECASE)
-        nums = [str(sid_to_num[f"SOURCE_{s}".upper()]) for s in sub_sids if f"SOURCE_{s}".upper() in sid_to_num]
-        if not nums:
-            return ""
-        return f"[{', '.join(nums)}]"
+    # Also extract any markdown links with URLs [X](https://...) from the answer
+    for m in re.finditer(r"\[(?:SOURCE_)?\d*\]\((https?://[^\s)]+)\)", answer, flags=re.IGNORECASE):
+        url = _clean_source_url(m.group(1))
+        if url and not any(s.get("url") == url for s in sources):
+            num = len(sources) + 1
+            sources.append({
+                "id": f"SOURCE_{num}",
+                "num": num,
+                "name": "Literature Reference",
+                "url": url,
+                "field": "",
+            })
 
-    clean_answer = re.sub(
-        r"\[\s*(SOURCE_\d+(?:\s*,\s*SOURCE_\d+)*)\s*\]",
-        _replace_source_bracket,
-        answer,
-        flags=re.IGNORECASE,
-    )
-
-    # Clean any stray individual SOURCE_N
-    for sid, num in sid_to_num.items():
-        clean_answer = re.sub(rf"\b{re.escape(sid)}\b", f"[{num}]", clean_answer, flags=re.IGNORECASE)
+    # If the model didn't explicitly cite markers, include top consulted reference chunks
+    if not sources and source_map:
+        for sid, chunk in list(source_map.items())[:4]:
+            raw_url = chunk.get("url") or ""
+            clean_url = _clean_source_url(raw_url, chunk)
+            if clean_url:
+                num = len(sources) + 1
+                sources.append({
+                    "id": sid,
+                    "num": num,
+                    "name": _clean_source_name(chunk),
+                    "url": clean_url,
+                    "field": chunk.get("field", ""),
+                })
 
     # Strip any redundant plain-text trailing "Sources" dump if the model generated one
-    clean_answer = re.sub(r"\n+\s*(?:Sources|References)\s*:\s*\n[\s\S]*$", "", clean_answer, flags=re.IGNORECASE)
+    clean_answer = re.sub(r"\n+\s*(?:Sources|References)\s*:\s*\n[\s\S]*$", "", answer, flags=re.IGNORECASE)
     clean_answer = re.sub(r"\n+\s*Sources\s*\n[\s\S]*$", "", clean_answer, flags=re.IGNORECASE)
 
-    return clean_answer.strip(), sources
+    # Normalize structure and clean formatting
+    clean_answer = _sanitize_chat_formatting(clean_answer)
+
+    return clean_answer, sources

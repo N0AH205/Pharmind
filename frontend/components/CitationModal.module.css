@@ -1,19 +1,12 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(32, 41, 51, 0.4);
-  backdrop-filter: blur(8px);
-  z-index: 1000;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 99999;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
-  animation: fadeIn 0.15s ease-out;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
 
 .modal {
@@ -25,14 +18,8 @@
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 22px 54px rgba(30, 43, 56, 0.22);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
   overflow: hidden;
-  animation: slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes slideUp {
-  from { transform: translateY(12px) scale(0.98); opacity: 0; }
-  to { transform: translateY(0) scale(1); opacity: 1; }
 }
 
 .header {
@@ -41,7 +28,7 @@
   justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid #e7e9ed;
-  background: #f7f8fa;
+  background: #f8fafc;
 }
 
 .titleGroup {
@@ -58,7 +45,7 @@
   margin: 0;
   font-size: 1.05rem;
   font-weight: 600;
-  color: var(--text-primary, #f1f5f9);
+  color: #1e293b;
 }
 
 .urlLink {
@@ -143,7 +130,7 @@
   border-top: 1px solid #e7e9ed;
   display: flex;
   justify-content: flex-end;
-  background: #f7f8fa;
+  background: #f8fafc;
 }
 
 .actionBtn {
@@ -151,7 +138,7 @@
   background: #ffffff;
   border: 1px solid #dfe4e9;
   border-radius: 6px;
-  color: var(--text-primary, #f1f5f9);
+  color: #334155;
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;

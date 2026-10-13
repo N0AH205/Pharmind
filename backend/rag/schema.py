@@ -13,6 +13,7 @@ system prompt so the LLM knows the exact structure to output (Phase 3).
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field
 
@@ -41,6 +42,35 @@ class FieldValue(BaseModel):
     missing: bool = False
 
 
+# ── Structured Bioactivity & Confidence Models ───────────────────────────────
+
+class BioactivityRecord(BaseModel):
+    target_name: str
+    target_organism: Optional[str] = "Homo sapiens"
+    action_type: Optional[str] = None   # inhibitor, agonist, antagonist, etc.
+    standard_type: str                  # Ki, Kd, IC50, EC50
+    value_nm: Optional[float] = None
+    relation: Optional[str] = "="       # =, <, >
+    pchembl_value: Optional[float] = None
+    assay_description: Optional[str] = None
+    chembl_assay_id: Optional[str] = None
+    doi: Optional[str] = None
+
+
+class CYPProfile(BaseModel):
+    substrates: list[str] = Field(default_factory=list)
+    inhibitors: list[str] = Field(default_factory=list)
+    inducers: list[str] = Field(default_factory=list)
+    evidence_source: Optional[str] = None
+
+
+class DataConfidenceLevel(str, Enum):
+    HIGH = "HIGH (FDA Approved with Full Label)"
+    MODERATE = "MODERATE (Clinical Candidate with Target Data)"
+    PRECLINICAL = "PRECLINICAL (In Vitro / Assay Evidence Only)"
+    UNSTUDIED = "UNSTUDIED (Sparse / Unknown Profile)"
+
+
 # ── Overview section ──────────────────────────────────────────────────────────
 
 class DrugName(BaseModel):
@@ -51,7 +81,11 @@ class DrugName(BaseModel):
 
 
 class ChemicalStructure(BaseModel):
-    smiles: str
+    smiles: Optional[str] = None
+    drug_type: Optional[str] = "small_molecule"
+    biologic_class: Optional[str] = None
+    target: Optional[str] = None
+    chembl_id: Optional[str] = None
     inchi: Optional[str] = None
     iupac_name: Optional[str] = None
     molecular_formula: Optional[str] = None
@@ -70,6 +104,7 @@ class PharmacodynamicsFields(BaseModel):
     selectivity: FieldValue           # Primary vs off-target affinity
     potency: FieldValue               # EC50 / ED50
     efficacy: FieldValue              # Emax — maximum achievable effect
+    bioactivities: list[BioactivityRecord] = Field(default_factory=list)
 
 
 # ── Pharmacokinetics section (ADME) ──────────────────────────────────────────
@@ -79,6 +114,7 @@ class ADMEFields(BaseModel):
     distribution: FieldValue  # Vd, protein binding, BBB
     metabolism: FieldValue    # CYP450, metabolites, hepatic involvement
     excretion: FieldValue     # CL, t1/2, elimination pathways
+    cyp_profile: Optional[CYPProfile] = None
 
 
 # ── Toxicology section ────────────────────────────────────────────────────────
@@ -117,6 +153,10 @@ class DrugInfo(BaseModel):
     """
     query_smiles: str
     generated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    data_confidence: Optional[str] = Field(
+        default=DataConfidenceLevel.HIGH.value,
+        description="Deterministic confidence rating based on regulatory approval and assay depth",
+    )
     disclaimer: str = (
         "This information is for educational and reference purposes only. "
         "It does not constitute clinical advice. Always consult a licensed "

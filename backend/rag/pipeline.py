@@ -44,7 +44,12 @@ async def resolve_query_structure(query: str) -> dict:
             from ingest.pubchem import enrich_structure as enrich_structure_online
 
             resolved = await enrich_structure_online(query)
-            if resolved.get("pubchem_cid") or resolved.get("molecular_formula"):
+            if (
+                resolved.get("pubchem_cid")
+                or resolved.get("molecular_formula")
+                or resolved.get("drug_type") == "biologic"
+                or (resolved.get("common_name") and resolved.get("drug_type") != "unknown")
+            ):
                 return resolved
         except Exception as exc:
             logger.warning("Online PubChem identity lookup failed; trying local RDKit: %s", exc)
@@ -124,9 +129,12 @@ async def retrieve_field_evidence(
 
     selected: list[dict] = []
     seen: set[str] = set()
+    from rag.hybrid_retriever import hybrid_rerank
+
     for category, passages in zip(RETRIEVAL_CATEGORIES, results):
         query = build_retrieval_query(structure_data, field=category["field"])
-        for chunk in rerank_passages(query=query, chunks=passages, top_k=3):
+        hybrid_candidates = hybrid_rerank(query=query, chunks=passages, top_k=min(len(passages), 8))
+        for chunk in rerank_passages(query=query, chunks=hybrid_candidates, top_k=3):
             text = chunk.get("text", "").strip()
             if text and text not in seen:
                 seen.add(text)
@@ -153,9 +161,12 @@ def merge_live_field_evidence(
         topic = chunk.get("retrieval_group") or chunk.get("field") or "research_review"
         groups.setdefault(topic, []).append(chunk)
 
+    from rag.hybrid_retriever import hybrid_rerank
+
     for topic, passages in groups.items():
         query = build_retrieval_query(structure_data, field=topic)
-        for chunk in rerank_passages(query=query, chunks=passages, top_k=2):
+        hybrid_candidates = hybrid_rerank(query=query, chunks=passages, top_k=min(len(passages), 6))
+        for chunk in rerank_passages(query=query, chunks=hybrid_candidates, top_k=2):
             text = chunk.get("text", "").strip()
             if text and text not in seen:
                 seen.add(text)
@@ -177,6 +188,102 @@ def enforce_resolved_drug_name(raw_dict: dict, structure_data: dict) -> dict:
     drug_name.setdefault("lab_codes", [])
     drug_name.setdefault("sources", [])
     raw_dict["drug_name"] = drug_name
+    return raw_dict
+
+
+COMMON_CYPS = ["CYP3A4", "CYP2D6", "CYP2C9", "CYP2C19", "CYP1A2", "CYP2E1", "CYP2B6", "CYP3A5"]
+
+def extract_cyp_profile(chunks: list[dict]) -> dict | None:
+    """Extract mentioned CYP substrates, inhibitors, inducers from label text."""
+    import re
+    full_text = " ".join(c.get("text", "") for c in chunks if c.get("field") in ("interactions", "adme", "drug_interactions", "safety"))
+    if not full_text:
+        return None
+
+    substrates: list[str] = []
+    inhibitors: list[str] = []
+    inducers: list[str] = []
+
+    for cyp in COMMON_CYPS:
+        pattern = re.compile(rf"\b{cyp}\b", re.IGNORECASE)
+        if pattern.search(full_text):
+            matches = [m.start() for m in re.finditer(pattern, full_text)]
+            for pos in matches[:3]:
+                snippet = full_text[max(0, pos - 80):min(len(full_text), pos + 100)].lower()
+                if "inhibit" in snippet or "inhibitor" in snippet:
+                    if cyp not in inhibitors:
+                        inhibitors.append(cyp)
+                elif "induc" in snippet:
+                    if cyp not in inducers:
+                        inducers.append(cyp)
+                elif "substrate" in snippet or "metaboliz" in snippet:
+                    if cyp not in substrates:
+                        substrates.append(cyp)
+                else:
+                    if cyp not in substrates and cyp not in inhibitors:
+                        substrates.append(cyp)
+
+    if substrates or inhibitors or inducers:
+        return {
+            "substrates": substrates[:4],
+            "inhibitors": inhibitors[:4],
+            "inducers": inducers[:4],
+            "evidence_source": "FDA Label Drug Interactions / Pharmacokinetics",
+        }
+    return None
+
+
+def calculate_data_confidence(chunks: list[dict], chembl_profile: dict | None) -> str:
+    """Determine scientific confidence level deterministically."""
+    has_fda = any("DailyMed" in c.get("source", "") or "openFDA" in c.get("source", "") for c in chunks)
+    max_phase = chembl_profile.get("max_phase") if chembl_profile else None
+    if has_fda or (max_phase is not None and float(max_phase) >= 4.0):
+        return "HIGH (FDA Approved with Full Label)"
+
+    max_phase = chembl_profile.get("max_phase") if chembl_profile else None
+    if max_phase is not None and float(max_phase) >= 1.0:
+        return f"MODERATE (Clinical Candidate - Phase {int(float(max_phase))})"
+
+    bioacts = chembl_profile.get("bioactivities", []) if chembl_profile else []
+    if bioacts or any("ChEMBL" in c.get("source", "") for c in chunks):
+        return "PRECLINICAL (In Vitro / Assay Evidence Only)"
+
+    return "UNSTUDIED (Sparse / Unknown Profile)"
+
+
+async def enrich_deterministic_monograph_data(
+    raw_dict: dict,
+    structure_data: dict,
+    chunks: list[dict],
+    drug_name: str,
+) -> dict:
+    """Enrich the monograph with deterministic ChEMBL assays, CYP profiles, and confidence ratings."""
+    chembl_prof = None
+    try:
+        from ingest.chembl import fetch_chembl_profile
+        chembl_prof = await fetch_chembl_profile(
+            drug_name,
+            inchi_key=structure_data.get("inchikey") or structure_data.get("inchi_key"),
+        )
+    except Exception as exc:
+        logger.warning("ChEMBL profile fetch failed: %s", exc)
+
+    if chembl_prof:
+        c_id = chembl_prof.get("chembl_id")
+        if c_id:
+            structure_data["chembl_id"] = c_id
+            if "chemical_structure" in raw_dict and isinstance(raw_dict["chemical_structure"], dict):
+                raw_dict["chemical_structure"]["chembl_id"] = c_id
+
+        bioacts = chembl_prof.get("bioactivities", [])
+        if bioacts and "pharmacodynamics" in raw_dict and isinstance(raw_dict["pharmacodynamics"], dict):
+            raw_dict["pharmacodynamics"]["bioactivities"] = bioacts
+
+    cyp_data = extract_cyp_profile(chunks)
+    if cyp_data and "adme" in raw_dict and isinstance(raw_dict["adme"], dict):
+        raw_dict["adme"]["cyp_profile"] = cyp_data
+
+    raw_dict["data_confidence"] = calculate_data_confidence(chunks, chembl_prof)
     return raw_dict
 
 
@@ -354,13 +461,55 @@ async def run_pipeline(
     # Ingestion may have populated a previously empty collection.
     retriever.is_ready()
 
-    indexed_cid = pubchem_cid if pubchem_cid and retriever.get_drug_chunk_count(pubchem_cid) else None
+    indexed_cid = (
+        pubchem_cid
+        if pubchem_cid and retriever.get_drug_chunk_count(pubchem_cid)
+        else (drug_name if drug_name and retriever.get_drug_chunk_count(drug_name) else None)
+    )
     chunks = await retrieve_field_evidence(structure_data, retriever, indexed_cid, drug_name)
     if not OFFLINE_MODE:
         from rag.online_search import search_live_pubmed
         live_chunks = await search_live_pubmed(structure_data)
         if live_chunks:
             chunks = merge_live_field_evidence(structure_data, chunks, live_chunks)
+
+    # 3. Direct DailyMed fallback: if chunks are still sparse (< 6), extract FDA label sections immediately
+    if not OFFLINE_MODE and len(chunks) < 6:
+        try:
+            from ingest.dailymed import search_drug_labels, get_label_sections
+            from ingest.run_ingest import _chunk_text
+
+            dailymed_terms = [drug_name]
+            if structure_data.get("brand_names"):
+                dailymed_terms = [*structure_data["brand_names"], drug_name]
+
+            seen_texts = {c.get("text", "").strip() for c in chunks}
+            for term in dailymed_terms[:2]:
+                labels = await search_drug_labels(term, pagesize=3)
+                if labels and labels[0].get("setid"):
+                    setid = labels[0]["setid"]
+                    title = labels[0].get("title", term)
+                    sections = await get_label_sections(setid)
+                    for fkey, ftext in sections.items():
+                        if ftext:
+                            for passage in _chunk_text(ftext, max_chars=1200):
+                                p_str = passage.strip()
+                                if p_str and p_str not in seen_texts:
+                                    seen_texts.add(p_str)
+                                    chunks.append({
+                                        "text": p_str,
+                                        "source": f"DailyMed FDA Label – {drug_name}: {title}",
+                                        "url": f"https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid={setid}",
+                                        "field": fkey,
+                                        "retrieval_group": fkey,
+                                        "drug": drug_name,
+                                        "pubchem_cid": pubchem_cid or "",
+                                        "document_id": str(setid),
+                                    })
+                    if len(chunks) >= 12:
+                        break
+        except Exception as exc:
+            logger.warning("Direct DailyMed fallback failed for %s: %s", drug_name, exc)
 
     if not chunks:
         raise ValueError(
@@ -401,6 +550,7 @@ async def run_pipeline(
     raw_dict = resolve_field_citations(raw_dict, source_map)
     raw_dict = await fill_missing_fields_from_evidence(raw_dict, chunks, drug_name)
     raw_dict = enforce_resolved_drug_name(raw_dict, structure_data)
+    raw_dict = await enrich_deterministic_monograph_data(raw_dict, structure_data, chunks, drug_name)
 
     # ── 8. Inject trusted PubChem structure (never from LLM) ─────────────
     raw_dict["chemical_structure"] = {
@@ -528,7 +678,11 @@ async def run_pipeline_stream(smiles: str):
     retriever.is_ready()
     yield {"type": "status", "stage": "retrieving", "message": f"Searching local ChromaDB vector database for CID {pubchem_cid or 'compound'}..."}
 
-    indexed_cid = pubchem_cid if pubchem_cid and retriever.get_drug_chunk_count(pubchem_cid) else None
+    indexed_cid = (
+        pubchem_cid
+        if pubchem_cid and retriever.get_drug_chunk_count(pubchem_cid)
+        else (drug_name if drug_name and retriever.get_drug_chunk_count(drug_name) else None)
+    )
     chunks = await retrieve_field_evidence(structure_data, retriever, indexed_cid, drug_name)
     if not OFFLINE_MODE:
         yield {"type": "status", "stage": "live_pubmed", "message": f"Searching PubMed for current pharmacology evidence on {drug_name}..."}
@@ -536,6 +690,42 @@ async def run_pipeline_stream(smiles: str):
         live_chunks = await search_live_pubmed(structure_data)
         if live_chunks:
             chunks = merge_live_field_evidence(structure_data, chunks, live_chunks)
+
+        if not chunks or len(chunks) < 6:
+            try:
+                yield {"type": "status", "stage": "dailymed_direct", "message": f"Extracting FDA package insert sections from DailyMed for {drug_name}..."}
+                from ingest.dailymed import search_drug_labels, get_label_sections
+                dailymed_terms = [drug_name]
+                if structure_data.get("brand_names"):
+                    dailymed_terms = [*structure_data["brand_names"], drug_name]
+
+                seen_texts = {c.get("text", "").strip() for c in chunks}
+                for term in dailymed_terms[:2]:
+                    labels = await search_drug_labels(term, pagesize=3)
+                    if labels and labels[0].get("setid"):
+                        setid = labels[0]["setid"]
+                        title = labels[0].get("title", term)
+                        sections = await get_label_sections(setid)
+                        for fkey, ftext in sections.items():
+                            if ftext:
+                                for passage in _chunk_text(ftext, max_chars=1200):
+                                    p_str = passage.strip()
+                                    if p_str and p_str not in seen_texts:
+                                        seen_texts.add(p_str)
+                                        chunks.append({
+                                            "text": p_str,
+                                            "source": f"DailyMed FDA Label – {drug_name}: {title}",
+                                            "url": f"https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid={setid}",
+                                            "field": fkey,
+                                            "retrieval_group": fkey,
+                                            "drug": drug_name,
+                                            "pubchem_cid": pubchem_cid or "",
+                                            "document_id": str(setid),
+                                        })
+                        if len(chunks) >= 12:
+                            break
+            except Exception as exc:
+                logger.warning("Direct DailyMed fallback failed for %s in stream: %s", drug_name, exc)
 
     if not chunks:
         yield {
@@ -594,6 +784,7 @@ async def run_pipeline_stream(smiles: str):
     yield {"type": "status", "stage": "evidence_review", "message": "Checking blank fields against the retrieved sources..."}
     raw_dict = await fill_missing_fields_from_evidence(raw_dict, chunks, drug_name)
     raw_dict = enforce_resolved_drug_name(raw_dict, structure_data)
+    raw_dict = await enrich_deterministic_monograph_data(raw_dict, structure_data, chunks, drug_name)
     raw_dict["chemical_structure"] = {
         **structure_data,
         "common_name": None,

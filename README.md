@@ -1,7 +1,7 @@
 # Pharmind / AI Drug Research & Pharmacology Intelligence Platform
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Next.js](https://img.shields.io/badge/Next.js-15-black)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com/)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Store-orange)](https://www.trychroma.com/)
 
@@ -23,7 +23,8 @@ It searches biomedical databases, visualizes 2D and 3D molecular structures, ind
   * **Pharmacokinetics (ADME)**: Absorption, distribution, metabolism (CYP450 enzymes), and excretion half-lives.
   * **Toxicology**: Acute toxicity, cytotoxicity, genetic risks, and hazard classifications.
   * **Therapeutic Profile**: Indications, contraindications, adverse reactions, and drug interactions.
-* **Grounded & Cited Evidence**: Every claim links directly to primary sources across PubMed abstracts, DailyMed SPL labels, ClinicalTrials.gov records, and PubChem.
+* **Grounded Evidence & Resources Tab**: Consult primary sources across PubMed abstracts, DailyMed SPL labels, ClinicalTrials.gov records, and PubChem. Filter citations by category, inspect raw retrieved excerpts in a focused viewer, and export full monographs.
+* **Resilient Multi-Model Failover**: Automated fallback across Google Gemini model candidates if cloud endpoints experience temporary traffic spikes (503 Service Unavailable) or rate limits.
 * **Chat with PDF**: Upload and index your own scientific papers, clinical trials, or monographs directly into your local vector database with one click.
 
 ---
@@ -105,6 +106,18 @@ Your saved chats and research queries are stored strictly in your browser's loca
 <details>
 <summary><b>4. Can I upload my own PDF research papers?</b></summary>
 Yes! In the research workspace (`/chat`), click **Chat with PDF** in the sidebar. Select your paper, associate it with a drug name, and Pharmind will extract, chunk, and index the text into your local ChromaDB store.
+</details>
+
+<details>
+<summary><b>5. What happens if Google's Gemini API has high traffic (503 Service Unavailable)?</b></summary>
+Pharmind includes built-in automatic failover. If your selected model experiences a temporary cloud outage or rate limits, the app automatically fails over to backup Gemini flash models without crashing your query. You can customize fallback candidates in `backend/.env` using `GEMINI_FALLBACK_MODELS`.
+</details>
+
+<details>
+<summary><b>6. Can I run the project locally without Docker?</b></summary>
+Yes! 
+- **Backend**: In a Python 3.10+ environment, run `pip install -r backend/requirements.txt` and launch `uvicorn main:app --reload --port 8000` from the `backend/` directory.
+- **Frontend**: In `frontend/`, run `npm install` followed by `npm run dev` to access the interface at `http://localhost:3000`.
 </details>
 
 ---

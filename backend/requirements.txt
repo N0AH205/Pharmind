@@ -12,6 +12,7 @@ rdkit>=2023.9.5
 flashrank>=0.2.10
 pypdf>=4.2.0
 python-multipart>=0.0.9
+rank-bm25>=0.2.2
 
 # Embeddings — local ONNX model via FastEmbed (no API key needed)
 ollama>=0.2.1

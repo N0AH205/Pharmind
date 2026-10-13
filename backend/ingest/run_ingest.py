@@ -34,7 +34,7 @@ import httpx
 from rag.config import OFFLINE_MODE
 
 from ingest.pubchem import get_compound_by_cid, get_compound_by_smiles, get_pharmacology_text, get_pug_view_evidence, get_synonyms
-from ingest.chembl import get_chembl_activity_evidence
+from ingest.chembl import fetch_chembl_profile, get_chembl_activity_evidence
 from ingest.dailymed import search_drug_labels, get_label_sections
 from ingest.pubmed import search_pubmed, fetch_abstracts
 from ingest.clinicaltrials import search_drug_trials
@@ -312,6 +312,71 @@ async def ingest_drug(drug: dict, collection, pubmed_limit: int | None = None) -
             })
     print(f"  ClinicalTrials.gov: {len(trials)} study record(s)")
 
+    # 5. ChEMBL — structured bioactivities and mechanisms
+    try:
+        from ingest.chembl import fetch_chembl_profile
+        chembl_prof = await fetch_chembl_profile(name, inchi_key=drug.get("inchi_key"))
+        c_id = chembl_prof.get("chembl_id")
+        if c_id:
+            for m in chembl_prof.get("mechanisms", []):
+                chunks.append({
+                    "text": f"ChEMBL Curated Mechanism: {m.get('mechanism_of_action')} | Action: {m.get('action_type')} | Target: {m.get('target_name')} ({m.get('target_organism')})",
+                    "source": f"ChEMBL Mechanism {c_id}",
+                    "url": f"https://www.ebi.ac.uk/chembl/compound_report_card/{c_id}/",
+                    "drug": canonical_name,
+                    "pubchem_cid": cid_str,
+                    "field": "moa",
+                    "retrieval_group": "moa",
+                    "document_id": str(c_id),
+                })
+            for a in chembl_prof.get("bioactivities", []):
+                chunks.append({
+                    "text": f"ChEMBL Experimental Bioassay: Target {a.get('target_name')} ({a.get('target_organism')}) — {a.get('standard_type')} {a.get('relation')} {a.get('value_nm')} nM. Assay: {a.get('assay_description') or ''}",
+                    "source": f"ChEMBL Bioassay {a.get('chembl_assay_id') or c_id}",
+                    "url": f"https://www.ebi.ac.uk/chembl/compound_report_card/{c_id}/",
+                    "drug": canonical_name,
+                    "pubchem_cid": cid_str,
+                    "field": "binding_affinity",
+                    "retrieval_group": "binding_affinity",
+                    "document_id": str(a.get("chembl_assay_id") or c_id),
+                })
+            print(f"  ChEMBL: {len(chembl_prof.get('mechanisms', []))} mechanism(s), {len(chembl_prof.get('bioactivities', []))} assay(s)")
+    except Exception as exc:
+        print(f"  ChEMBL: ingestion skipped ({exc})")
+
+    # 6. openFDA — direct FDA drug label sections
+    try:
+        from ingest.openfda import fetch_openfda_label
+        fda_label = await fetch_openfda_label(name)
+        if fda_label:
+            fda_sections = {
+                "indications": fda_label.get("indications"),
+                "contraindications": fda_label.get("contraindications"),
+                "adverse_effects": fda_label.get("adverse_reactions"),
+                "interactions": fda_label.get("drug_interactions"),
+                "moa": fda_label.get("mechanism_of_action"),
+                "adme": fda_label.get("pharmacokinetics"),
+                "safety": fda_label.get("boxed_warning"),
+            }
+            added_fda = 0
+            for f_key, f_val in fda_sections.items():
+                if f_val:
+                    for passage in _chunk_text(f_val):
+                        chunks.append({
+                            "text": passage,
+                            "source": f"openFDA Approved Label – {canonical_name}",
+                            "url": "https://open.fda.gov/apis/drug/label/",
+                            "drug": canonical_name,
+                            "pubchem_cid": cid_str,
+                            "field": f_key,
+                            "retrieval_group": f_key,
+                            "document_id": str(fda_label.get("spl_id") or "openfda"),
+                        })
+                        added_fda += 1
+            print(f"  openFDA: ingested {added_fda} section chunk(s)")
+    except Exception as exc:
+        print(f"  openFDA: ingestion skipped ({exc})")
+
     if not chunks:
         print(f"  WARNING: No chunks collected for {name} — skipping")
         return 0
@@ -328,8 +393,8 @@ async def ingest_drug(drug: dict, collection, pubmed_limit: int | None = None) -
         documents.append(chunk["text"])
         # Metadata must only contain str/int/float/bool values for ChromaDB
         metadatas.append({
-            "drug":        chunk["drug"],
-            "pubchem_cid": chunk["pubchem_cid"],
+            "drug":        chunk["drug"].strip().casefold(),
+            "pubchem_cid": str(chunk.get("pubchem_cid") or ""),
             "field":       chunk["field"],
             "source":      chunk["source"],
             "url":         chunk["url"],

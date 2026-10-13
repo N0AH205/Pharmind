@@ -24,10 +24,42 @@ export interface FieldValue {
   missing: boolean;
 }
 
+// ── Structured Bioactivities & Profiles ───────────────────────────────────────
+
+export interface BioactivityRecord {
+  target_name: string;
+  target_organism?: string;
+  action_type?: string;
+  standard_type: string;
+  value_nm?: number | null;
+  relation?: string;
+  pchembl_value?: number | null;
+  assay_description?: string;
+  chembl_assay_id?: string;
+  doi?: string;
+}
+
+export interface CYPProfile {
+  substrates: string[];
+  inhibitors: string[];
+  inducers: string[];
+  evidence_source?: string;
+}
+
+export type DataConfidenceLevel =
+  | "HIGH (FDA Approved with Full Label)"
+  | "MODERATE (Clinical Candidate with Target Data)"
+  | "PRECLINICAL (In Vitro / Assay Evidence Only)"
+  | "UNSTUDIED (Sparse / Unknown Profile)";
+
 // ── Overview ──────────────────────────────────────────────────────────────────
 
 export interface ChemicalStructure {
-  smiles: string;
+  smiles?: string;
+  drug_type?: string;
+  biologic_class?: string;
+  target?: string;
+  chembl_id?: string;
   inchi?: string;
   iupac_name?: string;
   molecular_formula?: string;
@@ -46,6 +78,7 @@ export interface PharmacodynamicsFields {
   selectivity: FieldValue;           // Primary vs off-target
   potency: FieldValue;               // EC50 / ED50
   efficacy: FieldValue;              // Emax
+  bioactivities?: BioactivityRecord[];
 }
 
 // ── Pharmacokinetics (ADME) ───────────────────────────────────────────────────
@@ -55,6 +88,7 @@ export interface ADMEFields {
   distribution: FieldValue;  // Vd, protein binding, BBB
   metabolism: FieldValue;    // CYP450, metabolites
   excretion: FieldValue;     // CL, t1/2, elimination
+  cyp_profile?: CYPProfile;
 }
 
 // ── Toxicology ────────────────────────────────────────────────────────────────
@@ -101,6 +135,7 @@ export interface DrugInfo {
   therapeutic_profile: TherapeuticProfile;
   history: HistoryFields;
   disclaimer: string;
+  data_confidence?: string;
   query_smiles: string;
   generated_at: string;
 }

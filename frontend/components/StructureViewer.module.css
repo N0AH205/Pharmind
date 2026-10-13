@@ -40,6 +40,51 @@
   background: var(--bg-elevated);
 }
 
+.biologicBanner {
+  flex-shrink: 0;
+  width: 260px;
+  min-height: 220px;
+  border-radius: var(--radius-md);
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  text-align: center;
+  gap: 12px;
+}
+
+.biologicIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #1d4ed8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.biologicInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.biologicTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #1e3a8a;
+}
+
+.biologicDesc {
+  font-size: 0.76rem;
+  color: #2563eb;
+  line-height: 1.4;
+}
+
 .properties {
   flex: 1;
   display: flex;
@@ -115,6 +160,13 @@
 
 .citationContainer {
   margin-top: 4px;
+}
+
+.smilesText {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+  color: #0052ff;
+  word-break: break-all;
 }
 
 @media (max-width: 640px) {

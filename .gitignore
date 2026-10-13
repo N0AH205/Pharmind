@@ -17,6 +17,8 @@ venv/
 # Data / Vector DB
 data/chroma/
 data/raw/
+**/cache/
+*.tsbuildinfo
 
 # Environment
 .env
